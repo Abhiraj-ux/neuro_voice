@@ -1,0 +1,16 @@
+﻿.venv\Scripts\uvicorn.exe : INFO:     Will watch for 
+changes in these directories: 
+['C:\\Users\\Lenovo\\hack_6\\backend']
+At line:1 char:13
++ cd backend; .venv\Scripts\uvicorn.exe main:app --host 
+0.0.0.0 --port  ...
++             
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO:     W 
+   ill ...ck_6\\backend']:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+INFO:     Uvicorn running on https://0.0.0.0:8001 (Press 
+CTRL+C to quit)
+INFO:     Started reloader process [13552] using 
+WatchFiles

@@ -1,0 +1,98 @@
+// src/App.jsx
+import { useState, useEffect } from 'react';
+import { Activity } from 'lucide-react';
+import Sidebar from './components/Sidebar';
+import Dashboard from './pages/Dashboard';
+import VoiceScan from './pages/VoiceScan';
+import MotorTest from './pages/MotorTest';
+import FusionReport from './pages/FusionReport';
+import AppointmentBot from './pages/AppointmentBot';
+import WearableFusion from './pages/WearableFusion';
+import Gamification from './pages/Gamification';
+import Patients from './pages/Patients';
+import { api } from './api/client';
+
+export default function App() {
+  const [activePage, setActivePage] = useState('dashboard');
+  const [patients, setPatients] = useState([]);
+  const [activePatientId, setActivePatientId] = useState(null);
+  const [vocalResult, setVocalResult] = useState(null);
+  const [motorResult, setMotorResult] = useState(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Load patients on mount & keep fresh
+  const refreshPatients = async () => {
+    try {
+      const list = await api.listPatients();
+      setPatients(list);
+      if (!activePatientId && list.length > 0) {
+        setActivePatientId(list[0].id);
+      }
+    } catch {
+      // Backend not running yet — silent fail, pages show their own errors
+    }
+  };
+
+  useEffect(() => {
+    refreshPatients();
+  }, [activePage]);   // refresh whenever page changes
+
+  const navigate = (page) => {
+    setActivePage(page);
+    setIsMobileMenuOpen(false);
+  };
+
+  const renderPage = () => {
+    const shared = {
+      onNavigate: navigate,
+      patients,
+      activePatientId,
+      setActivePatientId,
+      vocalResult,
+      setVocalResult,
+      motorResult,
+      setMotorResult
+    };
+    switch (activePage) {
+      case 'dashboard': return <Dashboard    {...shared} activePage={activePage} />;
+      case 'patients': return <Patients     {...shared} setActivePatientId={(id) => { setActivePatientId(id); }} />;
+      case 'scan': return <VoiceScan    {...shared} />;
+      case 'motor': return <MotorTest    {...shared} />;
+      case 'fusion': return <FusionReport  {...shared} />;
+      case 'appointment': return <AppointmentBot {...shared} />;
+      case 'wearable': return <WearableFusion {...shared} />;
+      case 'gamification': return <Gamification {...shared} />;
+      default: return <Dashboard    {...shared} />;
+    }
+  };
+
+  return (
+    <>
+      <div className="bg-animated">
+        <div className="bg-orb bg-orb-1" />
+        <div className="bg-orb bg-orb-2" />
+        <div className="bg-orb bg-orb-3" />
+      </div>
+      <div className="app-layout">
+        {/* Mobile Nav Button */}
+        <button
+          className="mobile-menu-btn"
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          aria-label="Toggle Menu"
+        >
+          <Activity size={20} color="white" />
+        </button>
+
+        <Sidebar
+          activePage={activePage}
+          onNavigate={navigate}
+          isOpen={isMobileMenuOpen}
+          onClose={() => setIsMobileMenuOpen(false)}
+          patients={patients}
+          activePatientId={activePatientId}
+        />
+        <main className={`main-content ${isMobileMenuOpen ? 'menu-open' : ''}`}>{renderPage()}</main>
+      </div>
+    </>
+  );
+}
