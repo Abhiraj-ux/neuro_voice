@@ -6,22 +6,16 @@ NeuroVoice AI is a cutting-edge multimodal diagnostic platform that fuses **Voca
 
 I have prepared this project for automated deployment so you no longer need to run the frontend and backend manually in the terminal.
 
-### **Option 1: Render (🚀 RECOMMENDED)**
-*Excellent for monorepos, AI workloads, and free hosting.*
+### **Option 1: Hugging Face Spaces (🏆 BEST FOR 16GB RAM)**
+*Best for heavy AI models (XGBoost + Praat) that crash on 512MB RAM limits.*
+1.  Create a new **Space** on [Hugging Face](https://huggingface.co/spaces).
+2.  Select **Docker** as the SDK.
+3.  Hugging Face gives you **16GB of RAM** for free, which is 32x more than Render/Railway.
+4.  Upload this repository. The `Dockerfile` (or our monorepo setup) will build and run your clinical engine perfectly.
 
-#### **Part A: The Clinical Backend (FastAPI)**
-1.  Login to [Render.com](https://render.com).
-2.  Click **"New"** > **"Web Service"** and connect your GitHub repo.
-3.  **Environment**: `Python 3`
-4.  **Build Command**: `pip install -r requirements.txt`
-5.  **Start Command**: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
-6.  **Persistence**: (Optional) Add a Disk for the SQLite database.
-
-#### **Part B: The Dashboard (React)**
-1.  Click **"New"** > **"Static Site"**.
-2.  **Build Command**: `npm install && npm run build`
-3.  **Publish Directory**: `dist`
-4.  **Headers**: Add a `_redirects` file or use a Rewrite rule for SPA routing.
+### **Option 2: Render / Railway (Standard)**
+*Note: Both have a 512MB RAM limit on free tiers. The AI may crash during heavy voice analysis.*
+1.  Follow the instructions below if you have a paid tier or tiny models.
 
 ### **Option 2: Vercel (Frontend Only)**
 *Good for the UI, but the AI backend is too large (950MB vs 500MB limit).*
@@ -48,4 +42,4 @@ I have prepared this project for automated deployment so you no longer need to r
 2.  **Frontend**: `npm install && npm run dev`
 
 ---
-*Created for the 2026 BharatGen AI4Bharat Hackathon.*
+
