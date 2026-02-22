@@ -1,6 +1,7 @@
 // src/pages/MotorTest.jsx
 import { useState, useEffect, useRef } from 'react';
 import { Activity, Zap, Timer, AlertCircle, CheckCircle2, RefreshCw, Smartphone, ShieldCheck, ChevronRight } from 'lucide-react';
+import { api } from '../api/client';
 
 function TapPulse({ x, y }) {
     return (
@@ -28,7 +29,9 @@ export default function MotorTest({ vocalResult, onNavigate, patients, activePat
     const [metrics, setMetrics] = useState(null);
     const tapAreaRef = useRef(null);
 
-    const selectedPatient = patients.find(p => p.id === activePatientId) || patients[0];
+    const selectedPatient = (patients && patients.length > 0)
+        ? (patients.find(p => p.id === activePatientId) || patients[0])
+        : null;
 
     const startTest = () => {
         setStage('testing');
@@ -50,13 +53,17 @@ export default function MotorTest({ vocalResult, onNavigate, patients, activePat
         return () => clearInterval(timer);
     }, [stage, timeLeft]);
 
+    const lastTapTimeRef = useRef(0);
+
     const handleTap = (e) => {
         if (stage !== 'testing') return;
 
         const now = Date.now();
-        const rect = tapAreaRef.current.getBoundingClientRect();
+        // FILTER: Debounce double-firing (physical buttons often trigger twice or touch+mouse)
+        if (now - lastTapTimeRef.current < 80) return;
+        lastTapTimeRef.current = now;
 
-        // Handle touch or mouse
+        const rect = tapAreaRef.current.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
@@ -70,44 +77,76 @@ export default function MotorTest({ vocalResult, onNavigate, patients, activePat
 
     const calculateResults = () => {
         setStage('result');
-        if (taps.length < 5) {
-            const res = { error: "Insufficient data. Please tap faster." };
+
+        // MDS-UPDRS criteria requires at least 10 taps for a valid assessment
+        if (taps.length < 8) {
+            const res = { error: "Insufficient data. Please tap faster and larger movements." };
             setMetrics(res);
-            setMotorResult(res); // Save to global state
+            setMotorResult(res);
             return;
         }
 
         const intervals = [];
         for (let i = 1; i < taps.length; i++) {
-            intervals.push(taps[i] - taps[i - 1]);
+            const gap = taps[i] - taps[i - 1];
+            if (gap > 50) intervals.push(gap); // ignoring accidental double-taps
         }
 
         const meanInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
         const speed = (taps.length / 15).toFixed(1); // Taps per second
 
-        // Coefficient of Variation (Arrhythmia marker)
-        const stdDev = Math.sqrt(intervals.map(x => Math.pow(x - meanInterval, 2)).reduce((a, b) => a + b) / intervals.length);
+        // Coefficient of Variation (CV) - The marker for Arrhythmic Movement
+        const variance = intervals.map(x => Math.pow(x - meanInterval, 2)).reduce((a, b) => a + b, 0) / intervals.length;
+        const stdDev = Math.sqrt(variance);
+
+        // CV expressed as percentage. Healthy controls usually < 12%. PD > 20%.
         const irregularity = (stdDev / meanInterval) * 100;
 
+        // Clinical Criteria based on MDS-UPDRS Frequency & Rhythm
         let risk = 'Low';
-        let hy_guess = 'H&Y Stage 0';
-        if (irregularity > 35 || speed < 2.5) {
+        let hy_guess = 'H&Y Stage 0 (Healthy Control)';
+
+        // Scale irregularity for UI (CV > 30 is effectively maximum clinical irregularity)
+        const displayIrregularity = Math.min(100, (irregularity / 35) * 100).toFixed(1);
+
+        if (speed < 2.8 || irregularity > 28) {
             risk = 'High';
-            hy_guess = 'H&Y Stage 2.5+';
-        } else if (irregularity > 20 || speed < 4) {
+            hy_guess = 'H&Y Stage 2.5 - 3 (Established PD)';
+        } else if (speed < 4.2 || irregularity > 15) {
             risk = 'Medium';
-            hy_guess = 'H&Y Stage 1-2';
+            hy_guess = 'H&Y Stage 1 - 2 (Early PD)';
+        } else {
+            risk = 'Low';
+            hy_guess = 'H&Y Stage 0 (Non-Parkinsonian)';
         }
 
         const res = {
             totalTaps: taps.length,
             speed,
-            irregularity: irregularity.toFixed(1),
+            irregularity: displayIrregularity,
+            raw_cv: irregularity.toFixed(1),
             risk,
-            hy_guess
+            hy_guess,
+            meanInterval
         };
         setMetrics(res);
-        setMotorResult(res); // Save to global state
+        setMotorResult(res);
+        saveResults(res);
+    };
+
+    const saveResults = async (res) => {
+        if (!selectedPatient) return;
+        try {
+            await api.saveMotorTest(selectedPatient.id, {
+                tremor_score: Math.min(100, Math.round(res.raw_cv * 2)),
+                reaction_ms: Math.round(res.meanInterval || 0),
+                accuracy_pct: Math.max(0, 100 - Math.round(res.irregularity)),
+                stability_idx: Number(res.speed),
+                label: res.hy_guess
+            });
+        } catch (err) {
+            console.error("Failed to save motor results:", err);
+        }
     };
 
     return (

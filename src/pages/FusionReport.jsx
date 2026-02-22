@@ -1,8 +1,71 @@
-// src/pages/FusionReport.jsx
-import { Brain, Activity, ShieldCheck, AlertCircle, Info, ChevronRight, Share2, Printer } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Brain, Activity, ShieldCheck, AlertCircle, Info, ChevronRight, Share2, Printer, Loader, Clock } from 'lucide-react';
+import { api } from '../api/client';
 
-export default function FusionReport({ vocalResult, motorResult, patients, activePatientId, onNavigate }) {
-    const selectedPatient = patients.find(p => p.id === activePatientId) || patients[0];
+export default function FusionReport({ vocalResult: propVocal, motorResult: propMotor, patients, activePatientId, onNavigate }) {
+    const [vocalResult, setVocalResult] = useState(propVocal);
+    const [motorResult, setMotorResult] = useState(propMotor);
+    const [imagingResult, setImagingResult] = useState(null);
+    const [loading, setLoading] = useState(!propVocal || !propMotor);
+
+    useEffect(() => {
+        if (propVocal) setVocalResult(propVocal);
+    }, [propVocal]);
+
+    useEffect(() => {
+        if (propMotor) setMotorResult(propMotor);
+    }, [propMotor]);
+
+    useEffect(() => {
+        if (!activePatientId) return;
+
+        const loadData = async () => {
+            setLoading(true);
+            try {
+                const res = await api.getPatient(activePatientId);
+                // Vocal
+                if (res.sessions && res.sessions.length > 0) {
+                    const s = res.sessions[0];
+                    setVocalResult({
+                        prediction: { parkinson_prob: s.parkinson_prob, confidence: s.confidence, risk_score: s.risk_score, interpretation: s.interpretation, model_version: s.model_version },
+                        biomarkers: { ppe: s.ppe, hnr: s.hnr }
+                    });
+                }
+                // Motor
+                if (res.motor_sessions && res.motor_sessions.length > 0) {
+                    const m = res.motor_sessions[0];
+                    setMotorResult({
+                        speed: m.stability_idx,
+                        irregularity: (100 - m.accuracy_pct).toFixed(1),
+                        risk: m.label.includes('Non-Parkinsonian') || m.label.includes('Stage 0') ? 'Low' : m.label.includes('Early') ? 'Medium' : 'High',
+                        hy_guess: m.label
+                    });
+                }
+                // Imaging (New Feature from NTUA Dataset)
+                if (res.imaging_sessions && res.imaging_sessions.length > 0) {
+                    setImagingResult(res.imaging_sessions[0]);
+                }
+            } catch (err) {
+                console.error("Failed to load fusion data:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, [activePatientId, propVocal, propMotor]);
+
+    const selectedPatient = (patients && patients.length > 0)
+        ? (patients.find(p => p.id === activePatientId) || patients[0])
+        : null;
+
+    if (loading) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
+                <Loader className="spin" size={40} color="var(--brand-1)" />
+                <p style={{ color: 'var(--text-muted)' }}>Fusing biomarker data...</p>
+            </div>
+        );
+    }
 
     if (!vocalResult || !motorResult) {
         return (
@@ -20,32 +83,39 @@ export default function FusionReport({ vocalResult, motorResult, patients, activ
         );
     }
 
-    // Logic for Fusion
-    const vocalRisk = vocalResult.prediction?.parkinson_prob * 100 || 0;
+    // Logic for Triple Fusion
+    const vocalRisk = vocalResult.prediction?.risk_score || (vocalResult.prediction?.parkinson_prob * 100) || 0;
     const motorRisk = motorResult.risk === 'High' ? 90 : motorResult.risk === 'Medium' ? 60 : 20;
+    const imageRisk = imagingResult ? (1.0 - (imagingResult.sbr || 1.0)) * 100 : null;
 
-    // Weighted Fusion (Motor is slightly more predictive in established cases)
-    const fusedScore = Math.round((vocalRisk * 0.45) + (motorRisk * 0.55));
+    // Weighted Fusion (Imaging is a strong clinical gold standard)
+    let fusedScore;
+    if (imageRisk !== null) {
+        // Triple domain weighting
+        fusedScore = Math.round((vocalRisk * 0.3) + (motorRisk * 0.3) + (imageRisk * 0.4));
+    } else {
+        fusedScore = Math.round((vocalRisk * 0.45) + (motorRisk * 0.55));
+    }
 
     let finalLabel = "Healthy";
-    let finalDesc = "Both biomarkers are within physiological norms.";
+    let finalDesc = "Combined biomarkers are within physiological norms.";
     let finalStage = "H&Y 0 (Healthy Control)";
     let severityColor = "var(--accent-green)";
 
     if (fusedScore > 85) {
         finalLabel = "High Clinical Suspicion";
-        finalStage = "H&Y Stage 2.5 - 3 (Established)";
-        finalDesc = "Dual-domain biomarkers confirm significant neurological involvement in both speech and motor control.";
+        finalStage = "H&Y Stage 2.5 - 4 (Established)";
+        finalDesc = "Triple-domain convergence (Voice + Motor + Imaging) strongly suggests established neurodegenerative progression.";
         severityColor = "var(--accent-red)";
     } else if (fusedScore > 60) {
         finalLabel = "Moderate Concern";
         finalStage = "H&Y Stage 1.5 - 2 (Early-Mid)";
-        finalDesc = "Inconsistencies detected in voice resonance paired with mild bradykinesia.";
+        finalDesc = "Significant biomarkers detected. Vocal instability aligns with kinematic slowness. Medical confirmation advised.";
         severityColor = "var(--accent-amber)";
-    } else if (fusedScore > 35) {
-        finalLabel = "Prodromal / Subclinical";
-        finalStage = "H&Y Stage 1 (Prodromal)";
-        finalDesc = "Early micro-signals detected. Likely the pre-motor phase where daily function is unaffected.";
+    } else if (fusedScore > 40) {
+        finalLabel = "Prodromal / Early Signs";
+        finalStage = "H&Y Stage 1 (Mild)";
+        finalDesc = "Early subclinical signals detected. Movement rhythm shows intermittent variance.";
         severityColor = "var(--accent-cyan)";
     }
 
@@ -84,41 +154,63 @@ export default function FusionReport({ vocalResult, motorResult, patients, activ
                     </div>
                 </div>
 
-                <div className="grid-2" style={{ marginBottom: 24 }}>
+                <div className="grid-3" style={{ marginBottom: 24, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
                     {/* Vocal Domain Breakdown */}
                     <div className="card">
-                        <div className="section-title"><Brain size={16} color="var(--accent-cyan)" /> Domain 1: Vocal Biomarkers</div>
+                        <div className="section-title"><Brain size={16} color="var(--accent-cyan)" /> Domain 1: Vocal</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
                             <div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>AI PREDICTION</div>
-                                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-cyan)' }}>{(vocalRisk).toFixed(1)}% Risk</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>RISK PROB</div>
+                                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-cyan)' }}>{(vocalRisk).toFixed(1)}%</div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>PRIMARY INDICATOR</div>
-                                <div style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 600 }}>PPE: {(vocalResult.biomarkers?.ppe || 0).toFixed(3)}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>HNR (CLARITY)</div>
+                                <div style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 600 }}>{(vocalResult.biomarkers?.hnr || 0).toFixed(1)} dB</div>
                             </div>
-                        </div>
-                        <div style={{ fontSize: 13, padding: '12px 16px', background: 'rgba(34,211,238,0.05)', borderRadius: 12, color: 'var(--text-secondary)', borderLeft: '4px solid var(--accent-cyan)' }}>
-                            Voice analysis identifies micro-patterns in your phonation frequency that often precede motor symptoms.
                         </div>
                     </div>
 
                     {/* Motor Domain Breakdown */}
                     <div className="card">
-                        <div className="section-title"><Activity size={16} color="var(--accent-purple)" /> Domain 2: Motor Kinematics</div>
+                        <div className="section-title"><Activity size={16} color="var(--accent-purple)" /> Domain 2: Motor</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
                             <div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>SPEED ANALYSIS</div>
-                                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-purple)' }}>{motorResult.speed} taps/s</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>SPEED INDEX</div>
+                                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-purple)' }}>{motorResult.speed}</div>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>RHYTHM IRREGULARITY</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>IRREGULARITY</div>
                                 <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-amber)' }}>{motorResult.irregularity}%</div>
                             </div>
                         </div>
-                        <div style={{ fontSize: 13, padding: '12px 16px', background: 'rgba(168,85,247,0.05)', borderRadius: 12, color: 'var(--text-secondary)', borderLeft: '4px solid var(--accent-purple)' }}>
-                            Tapping rhythm confirms the motor cortex's ability to maintain a periodic frequency without "freezing".
-                        </div>
+                    </div>
+
+                    {/* Imaging Domain Breakdown (New Feature) */}
+                    <div className="card">
+                        <div className="section-title"><ShieldCheck size={16} color="var(--accent-green)" /> Domain 3: Imaging</div>
+                        {imagingResult ? (
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>TYPE: {imagingResult.type}</div>
+                                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent-green)' }}>SBR: {imagingResult.sbr || 'N/A'}</div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>SCAN STATUS</div>
+                                    <div style={{ fontSize: 14, color: 'var(--accent-green)', fontWeight: 600 }}>Clinical File Active</div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ textAlign: 'center', py: 10 }}>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>MRI/DaT Scan not uploaded.</div>
+                                <button
+                                    className="btn btn-ghost btn-xs"
+                                    style={{ marginTop: 8 }}
+                                    onClick={() => onNavigate('imaging')}
+                                >
+                                    Add Radiological Data
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -147,7 +239,10 @@ export default function FusionReport({ vocalResult, motorResult, patients, activ
                     </div>
                 </div>
 
-                <div style={{ textAlign: 'center', marginTop: 30 }}>
+                <div style={{ textAlign: 'center', marginTop: 30, display: 'flex', gap: 16, justifyContent: 'center' }}>
+                    <button className="btn btn-xl btn-secondary" onClick={() => onNavigate('dashboard')}>
+                        <Clock size={18} /> View History & Previous Reports
+                    </button>
                     <button className="btn btn-xl btn-primary" onClick={() => onNavigate('appointment')}>
                         <ChevronRight size={18} /> Discuss Detailed Report with a Specialist
                     </button>

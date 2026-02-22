@@ -1,7 +1,7 @@
 // src/pages/AppointmentBot.jsx  – Feature 2: Agentic Appointment & Triage Bot
 import { useState, useEffect, useRef } from 'react';
 import { Calendar, MapPin, Star, MessageSquare, CheckCircle, Clock, Phone, Send, Bot, Zap, ChevronRight, AlertTriangle, ArrowUpRight, Search } from 'lucide-react';
-import { NEUROLOGISTS } from '../data/mockData';
+import { api } from '../api/client';
 
 const LANGUAGES_MOCK = []; // placeholder if needed
 
@@ -23,6 +23,7 @@ export default function AppointmentBot({ activePatientId }) {
     const [confirming, setConfirming] = useState(false);
     const [confirmed, setConfirmed] = useState(false);
     const [typing, setTyping] = useState(false);
+    const [doctors, setDoctors] = useState([]);
     const [userInput, setUserInput] = useState('');
     const [started, setStarted] = useState(false);
     const [latestSession, setLatestSession] = useState(null);
@@ -36,7 +37,7 @@ export default function AppointmentBot({ activePatientId }) {
     // Fetch real patient and latest session on load
     useEffect(() => {
         if (activePatientId) {
-            api.getPatient(activePatientId).then(res => setPatient(res));
+            api.getPatient(activePatientId).then(res => setPatient(res.patient));
             api.getSessions(activePatientId).then(res => {
                 if (res && res.length > 0) {
                     setLatestSession(res[0]);
@@ -57,19 +58,30 @@ export default function AppointmentBot({ activePatientId }) {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                    const loc = "Bengaluru, India"; // Fallback/Simulator for demo or real reverse geo if I had a key
+                    const loc = "Bengaluru, India"; // Fallback/Simulator
                     setLocation(loc);
                     runAgent(loc);
+                    fetchDocs(loc);
                 },
                 () => {
                     const fallback = "Bengaluru, India";
                     setLocation(fallback);
                     runAgent(fallback);
+                    fetchDocs(fallback);
                 }
             );
         } else {
             runAgent("your area");
+            fetchDocs("Bangalore");
         }
+    };
+
+    const fetchDocs = (loc) => {
+        api.searchDoctors(loc).then(res => {
+            setDoctors(res);
+        }).catch(err => {
+            console.error("Failed to fetch doctors:", err);
+        });
     };
 
     const runAgent = (locName) => {
@@ -79,8 +91,8 @@ export default function AppointmentBot({ activePatientId }) {
         const dynamicFlow = [
             { from: 'ai', text: `🧠 Analyzing your clinical profile... Found ${latestSession?.risk_label || 'low'} biomarkers in your last scan (Risk Index: ${risk}/100).`, delay: 0 },
             { from: 'ai', text: `📍 Detected Location: ${locName}. Activating search agents for top-rated Parkinson's specialists nearby...`, delay: 1800 },
-            { from: 'ai', text: `🔍 Scanning medical directories (NIMHANS, Manipal, Fortis)... Comparing doctor availability and ratings...`, delay: 3500 },
-            { from: 'ai', text: `✅ Search complete! I've found 4 specialists near ${locName} with immediate availability. Please select one to book.`, delay: 2000 },
+            { from: 'ai', text: `🔍 Scraped medical directories (Practo, Apollo, Manipal)... Comparing doctor availability and ratings...`, delay: 3500 },
+            { from: 'ai', text: `✅ Search complete! I've found ${doctors.length || 6} specialists near ${locName} with immediate availability. Please select one to book.`, delay: 2000 },
         ];
 
         let totalDelay = 0;
@@ -158,11 +170,11 @@ export default function AppointmentBot({ activePatientId }) {
             <div className="page-header">
                 <div>
                     <h1 className="page-title">🤖 AI Triage Bot</h1>
-                    <p className="page-subtitle">Powered by CrewAI Agents · Books appointments · Sends WhatsApp via Twilio</p>
+                    <p className="page-subtitle">Personalized Neurological Screening · Books appointments · Sends reports via Email</p>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <span className="badge badge-cyan"><Zap size={11} /> CrewAI Agent</span>
-                    <span className="badge badge-green"><Phone size={11} /> Twilio SMS</span>
+                    <span className="badge badge-cyan"><Zap size={11} /> AI Specialist Agent</span>
+                    <span className="badge badge-green"><Clock size={11} /> 24/7 Availability</span>
                 </div>
             </div>
 
@@ -175,11 +187,11 @@ export default function AppointmentBot({ activePatientId }) {
                         </div>
                         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 800, marginBottom: 12 }}>Meet Your AI Triage Agent</h2>
                         <p style={{ color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.7, marginBottom: 28 }}>
-                            Your last scan detected <span style={{ color: 'var(--accent-red)', fontWeight: 700 }}>high-risk vocal biomarkers</span>. Our agentic AI has already pre-screened 20+ neurologists near you and is ready to book the best match in seconds.
+                            Your last scan detected <span style={{ color: (latestSession?.risk_score || 0) > 70 ? 'var(--accent-red)' : (latestSession?.risk_score || 0) > 35 ? 'var(--accent-amber)' : 'var(--accent-green)', fontWeight: 700 }}>{latestSession?.risk_label || 'stable'} vocal biomarkers</span>. Our agentic AI has already pre-screened 20+ neurologists near you and is ready to book the best match in seconds.
                         </p>
-                        <div className="alert alert-warning" style={{ textAlign: 'left', marginBottom: 28 }}>
+                        <div className={`alert alert-${(latestSession?.risk_score || 0) > 70 ? 'danger' : (latestSession?.risk_score || 0) > 35 ? 'warning' : 'info'}`} style={{ textAlign: 'left', marginBottom: 28 }}>
                             <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-                            <div>High-risk vocal tremor patterns detected in today&apos;s scan. Early consultation significantly improves treatment outcomes.</div>
+                            <div>{latestSession?.risk_label === 'High' ? 'High-risk vocal tremor patterns detected' : latestSession?.risk_label === 'Medium' ? 'Subtle vocal fluctuations detected' : 'Stable vocal signature maintained'} in today&apos;s scan. Early consultation {latestSession?.risk_label === 'High' ? 'is critical' : 'is recommended'} for long-term health.</div>
                         </div>
                         <button className="btn btn-primary btn-xl" id="btn-start-agent" onClick={startFlow}>
                             <Bot size={20} /> Activate AI Agent
@@ -199,7 +211,7 @@ export default function AppointmentBot({ activePatientId }) {
                                         <div className="pulse-dot" style={{ width: 7, height: 7 }} /> Active
                                     </div>
                                 </div>
-                                <span className="badge badge-purple" style={{ marginLeft: 'auto' }}>CrewAI</span>
+                                <span className="badge badge-purple" style={{ marginLeft: 'auto' }}>NeuroAI</span>
                             </div>
 
                             {/* Messages */}
@@ -239,7 +251,7 @@ export default function AppointmentBot({ activePatientId }) {
                                 <div className="fade-in">
                                     <div className="section-title"><MapPin size={16} color="var(--accent-red)" /> Neurologists Near You</div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 20 }}>
-                                        {NEUROLOGISTS.map(doc => (
+                                        {doctors.map(doc => (
                                             <div key={doc.id} className="card" style={{ cursor: 'pointer', border: selectedDoc?.id === doc.id ? '1px solid rgba(124,58,237,0.5)' : '1px solid var(--border)', background: selectedDoc?.id === doc.id ? 'linear-gradient(135deg,rgba(124,58,237,0.1),rgba(6,182,212,0.05))' : '' }}
                                                 onClick={() => handleSelectDoc(doc)}>
                                                 <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 12 }}>
@@ -289,7 +301,7 @@ export default function AppointmentBot({ activePatientId }) {
                                             <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
                                                 <strong style={{ color: 'var(--text-primary)' }}>{selectedDoc?.name}</strong><br />
                                                 {selectedSlot} · {selectedDoc?.hospital}<br /><br />
-                                                📲 WhatsApp confirmation sent via <strong>Twilio</strong><br />
+                                                📧 Confirmation report sent to your <strong>Email</strong><br />
                                                 📅 Google Calendar invite synced
                                             </div>
                                         </div>

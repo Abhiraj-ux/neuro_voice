@@ -30,7 +30,7 @@ MODEL_PATH = os.path.join(MODEL_DIR, "parkinson_model.joblib")
 SCALER_PATH = os.path.join(MODEL_DIR, "parkinson_scaler.joblib")
 FEATURE_PATH = os.path.join(MODEL_DIR, "feature_names.joblib")
 
-UCI_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/parkinsons/parkinsons.data"
+UCI_URL = "https://raw.githubusercontent.com/vaibhavwalvekar/Parkinson-Disease-Detection/master/parkinsons.data"
 
 # Features that match what we extract from Praat + librosa
 FEATURE_COLS = [
@@ -55,33 +55,56 @@ FEATURE_COLS = [
 LABEL_COL = "status"
 
 def download_dataset() -> pd.DataFrame:
-    print("⬇️  Downloading UCI Parkinson's dataset...")
-    try:
-        r = requests.get(UCI_URL, timeout=30)
-        r.raise_for_status()
-        df = pd.read_csv(io.StringIO(r.text))
-        print(f"✅ Dataset loaded: {len(df)} samples, {len(df.columns)} features")
-        return df
-    except Exception as e:
-        print(f"❌ Download failed: {e}")
-        print("   Trying local fallback (parkinsons.data in backend/)...")
-        local = os.path.join(MODEL_DIR, "parkinsons.data")
-        if os.path.exists(local):
-            return pd.read_csv(local)
-        raise RuntimeError("Cannot load dataset. Place parkinsons.data in backend/")
+    print("⬇️  Downloading UCI Parkinson's dataset (with multi-mirror fallbacks)...")
+    
+    mirrors = [
+        "https://raw.githubusercontent.com/Aniruddha-Tushar/Parkinson-s-Disease-Detection/master/Parkinsons%20Train%20Data.csv",
+        "https://raw.githubusercontent.com/shreyasi-sharma/Parkinsons-Disease-Detection/master/parkinsons.data",
+        "https://raw.githubusercontent.com/nethika/Parkinsons-Disease-Detection/master/parkinsons.data",
+        "https://archive.ics.uci.edu/ml/machine-learning-databases/parkinsons/parkinsons.data"
+    ]
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
 
-def augment_data(X, y, noise_factor=0.01, iterations=2):
+    for url in mirrors:
+        try:
+            print(f"   Trying mirror: {url}")
+            r = requests.get(url, timeout=15, verify=False, headers=headers)
+            if r.status_code == 200:
+                # Handle CSV differences (header vs no header)
+                df = pd.read_csv(io.StringIO(r.text))
+                if 'status' in df.columns or 'MDVP:Fo(Hz)' in df.columns:
+                    print(f"   ✅ Success! Loaded {len(df)} samples.")
+                    return df
+        except Exception as e:
+            continue
+
+    print("⚠️  All remote mirrors failed. Checking local fallback...")
+    local = os.path.join(MODEL_DIR, "parkinsons.data")
+    if os.path.exists(local):
+        return pd.read_csv(local)
+    
+    raise RuntimeError("Cannot load dataset. Please manually place parkinsons.data in backend/ folder.")
+
+def augment_data(X, y, noise_factor=0.015, iterations=3):
     """
-    Creates synthetic variations by adding Gaussian noise to features.
-    Simulates different microphones and environmental conditions.
+    Creates synthetic variations with noise, gain shifts, and feature tilts.
+    Simulates variations in microphone sensitivity and environment.
     """
-    print(f"✨ Augmenting data: Adding Gaussian noise (factor={noise_factor})...")
+    print(f"✨ Augmenting data: {iterations}x variations...")
     X_aug, y_aug = [X], [y]
     
     for _ in range(iterations):
+        # 1. Gaussian Noise
         noise = np.random.normal(0, noise_factor, X.shape)
-        # Apply noise multiplicatively to preserve scale
         X_noisy = X * (1 + noise)
+        
+        # 2. Random Gain (Sensitivity shift)
+        gain = np.random.uniform(0.9, 1.1)
+        X_noisy *= gain
+        
         X_aug.append(X_noisy)
         y_aug.append(y)
         

@@ -8,8 +8,10 @@ import MotorTest from './pages/MotorTest';
 import FusionReport from './pages/FusionReport';
 import AppointmentBot from './pages/AppointmentBot';
 import WearableFusion from './pages/WearableFusion';
+import Community from './pages/Community';
 import Gamification from './pages/Gamification';
 import Patients from './pages/Patients';
+import ImagingScan from './pages/ImagingScan';
 import { api } from './api/client';
 
 export default function App() {
@@ -19,6 +21,11 @@ export default function App() {
   const [vocalResult, setVocalResult] = useState(null);
   const [motorResult, setMotorResult] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Wearable Global State
+  const [wearableConnected, setWearableConnected] = useState(false);
+  const [wearablePulse, setWearablePulse] = useState(72);
+  const [wearableDevice, setWearableDevice] = useState(null);
 
   // Load patients on mount & keep fresh
   const refreshPatients = async () => {
@@ -51,7 +58,13 @@ export default function App() {
       vocalResult,
       setVocalResult,
       motorResult,
-      setMotorResult
+      setMotorResult,
+      wearableConnected,
+      setWearableConnected,
+      wearablePulse,
+      setWearablePulse,
+      wearableDevice,
+      setWearableDevice
     };
     switch (activePage) {
       case 'dashboard': return <Dashboard    {...shared} activePage={activePage} />;
@@ -61,7 +74,9 @@ export default function App() {
       case 'fusion': return <FusionReport  {...shared} />;
       case 'appointment': return <AppointmentBot {...shared} />;
       case 'wearable': return <WearableFusion {...shared} />;
+      case 'community': return <Community {...shared} />;
       case 'gamification': return <Gamification {...shared} />;
+      case 'imaging': return <ImagingScan {...shared} />;
       default: return <Dashboard    {...shared} />;
     }
   };

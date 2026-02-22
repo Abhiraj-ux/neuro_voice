@@ -44,12 +44,14 @@ def convert_to_wav(input_path: str) -> str:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    # Fallback: let soundfile try — works for WAV/FLAC
+    # Fallback: use librosa to clean and convert
     try:
-        y, sr = sf.read(input_path, always_2d=False)
-        if y.ndim > 1:
-            y = y.mean(axis=1)
-        sf.write(wav_path, y.astype(np.float32), 22050)
+        y, sr = librosa.load(input_path, sr=22050, mono=True)
+        # Apply light denoising (spectral subtraction proxy)
+        stft = librosa.stft(y)
+        stft_denoised = stft * (np.abs(stft) > (np.mean(np.abs(stft)) * 0.1))
+        y_clean = librosa.istft(stft_denoised)
+        sf.write(wav_path, y_clean, 22050)
         return wav_path
     except Exception as e:
         logger.error("Audio conversion failed: %s", e)
@@ -90,12 +92,24 @@ def extract_biomarkers(audio_path: str) -> dict:
     pitch_values = pitch.selected_array["frequency"]
     voiced = pitch_values[pitch_values > 0]
 
-    if len(voiced) < 10:
-        raise ValueError("Insufficient voiced segments. Speak clearly and avoid background noise.")
+    # Stability Check: Parkinson's metrics are best on steady phonation.
+    # We find segments where the pitch variation is reasonable.
+    # Relaxed from 10Hz to 30Hz to allow for actual Parkinsonian tremor/instability.
+    pitch_diffs = np.abs(np.diff(voiced))
+    stable_voiced = voiced[1:][pitch_diffs < 30.0]
 
-    fo_mean = float(np.mean(voiced))
-    fo_max  = float(np.max(voiced))
-    fo_min  = float(np.min(voiced))
+    # If stability check is too strict for this user, fall back to raw voiced array
+    # but only if we have enough voiced frames to make a valid assessment.
+    if len(stable_voiced) < 20:
+        if len(voiced) >= 20:
+            logger.warning("Voice is erratic; falling back to full voiced array for metrics.")
+            stable_voiced = voiced
+        else:
+            raise ValueError("Audio contains too little voicing. Please sustain a steady 'aaaaah' for at least 3 seconds.")
+
+    fo_mean = float(np.mean(stable_voiced))
+    fo_max  = float(np.max(stable_voiced))
+    fo_min  = float(np.min(stable_voiced))
 
     # ── 3. Jitter (cycle-to-cycle frequency variation) ────────────────────────
     # PointProcess extracts individual glottal pulses

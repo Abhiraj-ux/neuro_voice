@@ -1,6 +1,6 @@
 // src/pages/Patients.jsx – Real patient registration and management
 import { useState, useEffect } from 'react';
-import { Users, Plus, Activity, Clock, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import { Users, Plus, Activity, Clock, AlertCircle, CheckCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function Patients({ onNavigate, setActivePatientId }) {
@@ -24,6 +24,22 @@ export default function Patients({ onNavigate, setActivePatientId }) {
     };
 
     useEffect(() => { load(); }, []);
+
+    const handleDeleteAll = async () => {
+        const confirmed = window.confirm("🚨 DANGER: This will permanently wipe ALL patients and session data. This cannot be undone. Proceed?");
+        if (!confirmed) return;
+
+        setLoading(true);
+        try {
+            await api.deleteAllPatients();
+            setActivePatientId(null);
+            await load();
+        } catch (e) {
+            setError(`Delete failed: ${e.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleCreate = async (e) => {
         e.preventDefault();
@@ -55,6 +71,11 @@ export default function Patients({ onNavigate, setActivePatientId }) {
                 </div>
                 <div style={{ display: 'flex', gap: 10 }}>
                     <button className="btn btn-secondary" onClick={load}><RefreshCw size={15} /> Refresh</button>
+                    {patients.length > 0 && (
+                        <button className="btn btn-danger" onClick={handleDeleteAll}>
+                            <Trash2 size={16} /> Wipe All Data
+                        </button>
+                    )}
                     <button className="btn btn-primary" id="btn-new-patient" onClick={() => setShowForm(true)}>
                         <Plus size={16} /> New Patient
                     </button>
@@ -108,8 +129,9 @@ export default function Patients({ onNavigate, setActivePatientId }) {
                                         <input className="input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+91 ..." />
                                     </div>
                                     <div className="form-group">
-                                        <label className="label">Email</label>
-                                        <input className="input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="patient@email.com" />
+                                        <label className="label">Email (For Automated Reports) *</label>
+                                        <input className="input" type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="patient@email.com" />
+                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>Required to receive combined screening reports.</div>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
@@ -140,16 +162,18 @@ export default function Patients({ onNavigate, setActivePatientId }) {
                             <div key={p.id} className="card" style={{ display: 'flex', gap: 20, alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                                 onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
                                 onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
-                                onClick={() => { setActivePatientId(p.id); onNavigate('scan'); }}>
+                                onClick={() => { setActivePatientId(p.id); onNavigate('dashboard'); }}>
                                 <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'linear-gradient(135deg,var(--brand-1),var(--accent-pink))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, color: 'white', flexShrink: 0 }}>
                                     {p.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div style={{ flex: 1 }}>
                                     <div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div>
-                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 12, marginTop: 2 }}>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
                                         <span>Age {p.age} · {p.gender}</span>
                                         <span>🌐 {p.language?.toUpperCase()}</span>
                                         {p.phone && <span>📞 {p.phone}</span>}
+                                        {p.email && <span>📧 {p.email}</span>}
+                                        {!p.email && <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>⚠️ Missing Email</span>}
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'right', flexShrink: 0 }}>

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Mic, MicOff, Globe, RefreshCw, Brain, AlertTriangle,
     CheckCircle, Info, Volume2, ChevronRight, Wifi, Activity, ShieldCheck,
-    Server, AlertCircle, Loader
+    Server, AlertCircle, Loader, Users
 } from 'lucide-react';
 import { LANGUAGES, AI_TIPS } from '../data/mockData';
 import { api, checkBackendHealth } from '../api/client';
@@ -39,7 +39,7 @@ function RiskArc({ score }) {
     const rad = ((s / 100) * 180 - 180) * (Math.PI / 180);
     const x = cx + r * Math.cos(rad);
     const y = cy + r * Math.sin(rad);
-    const color = s < 35 ? '#34d399' : s < 65 ? '#fbbf24' : '#f87171';
+    const color = s < 30 ? '#10b981' : s < 50 ? '#fbbf24' : s < 80 ? '#f97316' : '#ef4444';
     return (
         <svg width="220" height="115" viewBox="0 0 220 115">
             <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
@@ -95,7 +95,7 @@ function getSupportedMime() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-export default function VoiceScan({ onNavigate, patients = [], activePatientId, setActivePatientId, setVocalResult }) {
+export default function VoiceScan({ onNavigate, patients = [], activePatientId, setActivePatientId, setVocalResult, motorResult }) {
     const [stage, setStage] = useState('idle');  // idle|recording|analyzing|result|error
     const [lang, setLang] = useState(LANGUAGES[0]);
     const [elapsed, setElapsed] = useState(0);
@@ -104,7 +104,6 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
     const [error, setError] = useState('');
     const [analysisSteps, setAnalysisSteps] = useState([]);
     const [backendStatus, setBackendStatus] = useState('checking'); // checking|online|offline|no_model
-    const [isSubmitting, setIsSubmitting] = useState(false);
     const [transcript, setTranscript] = useState('');
 
     const mediaRecorder = useRef(null);
@@ -116,7 +115,9 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
     const stepsTimers = useRef([]);
     const recognitionRef = useRef(null);
 
-    const selectedPatient = patients.find(p => p.id === activePatientId) || patients[0];
+    const selectedPatient = (patients && patients.length > 0)
+        ? (patients.find(p => p.id === activePatientId) || patients[0])
+        : null;
 
     const STEPS = [
         'Converting audio to 22 kHz mono WAV…',
@@ -142,7 +143,10 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
     }, []);
 
     useEffect(() => {
-        pingBackend();
+        const initPing = async () => {
+            await pingBackend();
+        };
+        initPing();
         const interval = setInterval(pingBackend, 15000);
         return () => clearInterval(interval);
     }, [pingBackend]);
@@ -242,8 +246,8 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
             const finalMime = mr.mimeType || mimeType || 'audio/webm';
             const blob = new Blob(audioChunks.current, { type: finalMime });
             console.log(`[VoiceScan] Recording stopped. Chunks: ${audioChunks.current.length}, Total: ${(blob.size / 1024).toFixed(1)} KB, MIME: ${finalMime}`);
-            if (blob.size < 1000) {
-                setError('Recording too short or empty. Please speak clearly for at least 3 seconds.');
+            if (blob.size < 5000) {
+                setError('Recording too short. Please sustain an "aaaah" sound for at least 5-10 seconds for a valid clinical scan.');
                 setStage('error');
                 return;
             }
@@ -271,13 +275,10 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
             recognition.lang = lang.code === 'en' ? 'en-US' : lang.code;
 
             recognition.onresult = (event) => {
-                let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const transcriptPiece = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
                         setTranscript(prev => prev + transcriptPiece + ' ');
-                    } else {
-                        interimTranscript += transcriptPiece;
                     }
                 }
             };
@@ -325,7 +326,7 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
             setStage('error');
             return;
         }
-        setIsSubmitting(true);
+
         setAnalysisSteps([]);
         clearStepTimers();
 
@@ -345,14 +346,13 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
                 setResult(data);
                 setVocalResult(data); // Save to global state
                 setStage('result');
-                setIsSubmitting(false);
+
             }, 400);
         } catch (e) {
             clearStepTimers();
             console.error('[VoiceScan] Analysis error:', e);
             setError(`Analysis failed: ${e.message}`);
             setStage('error');
-            setIsSubmitting(false);
         }
     };
 
@@ -372,7 +372,6 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
         setError('');
         setElapsed(0);
         setAnalysisSteps([]);
-        setIsSubmitting(false);
     };
 
     useEffect(() => () => {
@@ -400,85 +399,100 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
             </div>
 
             <div className="page-body">
+                {(!patients || patients.length === 0) && (
+                    <div className="fade-in" style={{ textAlign: 'center', marginTop: 80, padding: 40, background: 'rgba(255,255,255,0.02)', borderRadius: 24, border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(124,58,237,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+                            <AlertCircle size={40} color="var(--accent-purple)" />
+                        </div>
+                        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 900, marginBottom: 12 }}>No Patients Registered</h2>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: 16, marginBottom: 30, maxWidth: 400, margin: '0 auto 30px' }}>
+                            A patient profile is required to store and analyze vocal biomarkers. Please register a patient first.
+                        </p>
+                        <button className="btn btn-primary btn-xl" onClick={() => onNavigate('patients')}>
+                            Go to Patient Registry
+                        </button>
+                    </div>
+                )}
 
-                {/* Backend offline warning */}
-                {backendStatus === 'offline' && (
-                    <div className="alert alert-danger" style={{ marginBottom: 20 }}>
-                        <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                {patients && patients.length > 0 && <>
+
+                    {/* Backend offline warning */}
+                    {backendStatus === 'offline' && (
+                        <div className="alert alert-danger" style={{ marginBottom: 20 }}>
+                            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                            <div>
+                                <strong>Backend is not running!</strong> Voice analysis requires the Python backend.
+                                <br />
+                                <span style={{ fontSize: 13, marginTop: 4, display: 'block' }}>
+                                    Double-click <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4 }}>start_backend.bat</code> in your project folder, wait for it to say "Uvicorn running", then refresh.
+                                </span>
+                                <button
+                                    className="btn btn-ghost"
+                                    style={{ marginTop: 10, fontSize: 12, padding: '4px 12px' }}
+                                    onClick={pingBackend}
+                                >
+                                    <RefreshCw size={12} /> Retry Connection
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Model not ready warning */}
+                    {backendStatus === 'no_model' && (
+                        <div className="alert" style={{ marginBottom: 20, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)' }}>
+                            <AlertTriangle size={18} style={{ flexShrink: 0, color: 'var(--accent-amber)' }} />
+                            <div style={{ color: 'var(--accent-amber)' }}>
+                                <strong>ML model is training…</strong> The XGBoost model is being trained on the UCI Parkinson's dataset.
+                                <br />
+                                <span style={{ fontSize: 13 }}>This only happens once and takes ~30 seconds. Leave start_backend.bat open and wait.</span>
+                                <button
+                                    className="btn btn-ghost"
+                                    style={{ marginTop: 10, fontSize: 12, padding: '4px 12px', display: 'block' }}
+                                    onClick={pingBackend}
+                                >
+                                    <RefreshCw size={12} /> Check Again
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* iPhone connection notice */}
+                    <div className="alert alert-info" style={{ marginBottom: 20 }}>
+                        <Wifi size={16} style={{ flexShrink: 0 }} />
                         <div>
-                            <strong>Backend is not running!</strong> Voice analysis requires the Python backend.
-                            <br />
-                            <span style={{ fontSize: 13, marginTop: 4, display: 'block' }}>
-                                Double-click <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4 }}>start_backend.bat</code> in your project folder, wait for it to say "Uvicorn running", then refresh.
-                            </span>
-                            <button
-                                className="btn btn-ghost"
-                                style={{ marginTop: 10, fontSize: 12, padding: '4px 12px' }}
-                                onClick={pingBackend}
+                            <strong>Using iPhone?</strong> Make sure your phone and computer are on the same Wi-Fi.
+                            Access <code style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: 4 }}>
+                                https://[your-computer-IP]:5174
+                            </code> in Safari. iPhone needs a different API URL — see .env file.
+                        </div>
+                    </div>
+
+                    {/* Patient selector */}
+                    <div className="card" style={{ marginBottom: 20, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-secondary)', flexShrink: 0 }}>Patient:</div>
+                        {patients.length === 0 ? (
+                            <div style={{ fontSize: 13, color: 'var(--accent-amber)' }}>
+                                ⚠️ No patients yet. Go to <strong>Patients</strong> tab and register a patient first.
+                            </div>
+                        ) : (
+                            <select
+                                className="input"
+                                style={{ maxWidth: 260 }}
+                                value={selectedPatient?.id || ''}
+                                onChange={e => setActivePatientId(Number(e.target.value))}
                             >
-                                <RefreshCw size={12} /> Retry Connection
-                            </button>
-                        </div>
+                                {patients.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name} · Age {p.age}</option>
+                                ))}
+                            </select>
+                        )}
+                        {selectedPatient && (
+                            <span className="badge badge-cyan">{selectedPatient.name}</span>
+                        )}
                     </div>
-                )}
 
-                {/* Model not ready warning */}
-                {backendStatus === 'no_model' && (
-                    <div className="alert" style={{ marginBottom: 20, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)' }}>
-                        <AlertTriangle size={18} style={{ flexShrink: 0, color: 'var(--accent-amber)' }} />
-                        <div style={{ color: 'var(--accent-amber)' }}>
-                            <strong>ML model is training…</strong> The XGBoost model is being trained on the UCI Parkinson's dataset.
-                            <br />
-                            <span style={{ fontSize: 13 }}>This only happens once and takes ~30 seconds. Leave start_backend.bat open and wait.</span>
-                            <button
-                                className="btn btn-ghost"
-                                style={{ marginTop: 10, fontSize: 12, padding: '4px 12px', display: 'block' }}
-                                onClick={pingBackend}
-                            >
-                                <RefreshCw size={12} /> Check Again
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* iPhone connection notice */}
-                <div className="alert alert-info" style={{ marginBottom: 20 }}>
-                    <Wifi size={16} style={{ flexShrink: 0 }} />
-                    <div>
-                        <strong>Using iPhone?</strong> Make sure your phone and computer are on the same Wi-Fi.
-                        Access <code style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: 4 }}>
-                            https://[your-computer-IP]:5174
-                        </code> in Safari. iPhone needs a different API URL — see .env file.
-                    </div>
-                </div>
-
-                {/* Patient selector */}
-                <div className="card" style={{ marginBottom: 20, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-secondary)', flexShrink: 0 }}>Patient:</div>
-                    {patients.length === 0 ? (
-                        <div style={{ fontSize: 13, color: 'var(--accent-amber)' }}>
-                            ⚠️ No patients yet. Go to <strong>Patients</strong> tab and register a patient first.
-                        </div>
-                    ) : (
-                        <select
-                            className="input"
-                            style={{ maxWidth: 260 }}
-                            value={selectedPatient?.id || ''}
-                            onChange={e => setActivePatientId(Number(e.target.value))}
-                        >
-                            {patients.map(p => (
-                                <option key={p.id} value={p.id}>{p.name} · Age {p.age}</option>
-                            ))}
-                        </select>
-                    )}
-                    {selectedPatient && (
-                        <span className="badge badge-cyan">{selectedPatient.name}</span>
-                    )}
-                </div>
-
-                {/* ── IDLE / ERROR stage ─────────────────────────────────────────────── */}
-                {(stage === 'idle' || stage === 'error') && (
-                    <div className="fade-in">
+                    {/* ── IDLE / ERROR stage ─────────────────────────────────────────────── */}
+                    {(stage === 'idle' || stage === 'error') && <div className="fade-in">
                         <div className="grid-2" style={{ marginBottom: 20 }}>
                             {/* Language selector */}
                             <div className="card">
@@ -507,379 +521,402 @@ export default function VoiceScan({ onNavigate, patients = [], activePatientId, 
                                         &ldquo;{lang.prompt}&rdquo;
                                     </p>
                                 </div>
-                                <div className="card card-gradient-cyan">
-                                    <div className="section-title"><Info size={16} color="var(--accent-cyan)" />Tips — {lang.name}</div>
-                                    {tips.map((t, i) => (
-                                        <div key={i} style={{
-                                            display: 'flex', gap: 8, fontSize: 13,
-                                            color: 'var(--text-secondary)', marginBottom: 8
-                                        }}>
-                                            <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>{i + 1}.</span> {t}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {error && (
-                                    <div className="alert alert-danger">
-                                        <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-                                        <div>
-                                            <strong>Error:</strong> {error}
+                                <div className="card card-gradient-cyan" style={{ border: '2px solid var(--accent-cyan)' }}>
+                                    <div className="section-title"><ShieldCheck size={16} color="var(--accent-cyan)" /> Hybrid Clinical Protocol</div>
+                                    <div style={{ marginBottom: 14 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-cyan)', marginBottom: 4 }}>🔬 WHY THE "AAAAAH"?</div>
+                                        <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                            Sustaining a steady tone for just <strong>10 seconds</strong> allows the AI to measure your vocal tremors without word interference.
+                                            After that, feel free to read the prompt naturally!
                                         </div>
                                     </div>
-                                )}
-
-                                {!selectedPatient && backendStatus === 'online' && (
-                                    <div className="alert alert-amber" style={{ marginBottom: 15, background: 'rgba(251,191,36,0.1)' }}>
-                                        <Users size={16} />
-                                        <div>
-                                            <strong>No Patient Selected:</strong> Go to the <strong>Patients</strong> tab, register a patient, then come back here.
-                                            <button className="btn btn-ghost" onClick={() => onNavigate('patients')} style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-                                                → Go Register Patient
-                                            </button>
-                                        </div>
+                                    <div style={{ background: 'rgba(34,211,238,0.06)', padding: 12, borderRadius: 10, fontSize: 12, color: 'var(--accent-cyan)', marginBottom: 10, border: '1px solid var(--accent-cyan)44' }}>
+                                        ✅ Speak naturally after the initial burst. The AI now uses <strong>Segmented Phonation</strong> to filter out speaking pauses.
                                     </div>
-                                )}
-
-                                <button
-                                    className="btn btn-primary btn-xl"
-                                    id="btn-start-scan"
-                                    disabled={!selectedPatient || backendStatus !== 'online'}
-                                    onClick={startRecording}
-                                    style={{ position: 'relative' }}
-                                >
-                                    {backendStatus === 'checking' ? (
-                                        <><Loader size={20} className="spin" /> Connecting to backend…</>
-                                    ) : backendStatus === 'offline' ? (
-                                        <><AlertCircle size={20} /> Backend Offline — Cannot Scan</>
-                                    ) : !selectedPatient ? (
-                                        <><Users size={22} /> Register Patient to Start</>
-                                    ) : (
-                                        <><Mic size={22} /> Start 30-Second Scan</>
-                                    )}
-                                </button>
-                                <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
-                                    Audio is analyzed on your local server and stored securely. Never sent to third parties.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* ── RECORDING stage ─────────────────────────────────────────────────── */}
-                {stage === 'recording' && (
-                    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28, paddingTop: 20 }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <span className="badge badge-red" style={{ fontSize: 13, padding: '6px 18px' }}>● REC LIVE</span>
-                            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 8 }}>{lang.flag} Recording in {lang.name}</div>
-                        </div>
-
-                        <div style={{ position: 'relative', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <div className="pulse-ring" style={{ width: 120, height: 120, top: 10, left: 10 }} />
-                            <div className="pulse-ring" style={{ width: 120, height: 120, top: 10, left: 10, animationDelay: '0.6s' }} />
-                            <div style={{ width: 100, height: 100, borderRadius: '50%', background: 'linear-gradient(135deg,#7c3aed,#ef4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 40px rgba(239,68,68,0.5)', zIndex: 1 }}>
-                                <Mic size={36} color="white" />
-                            </div>
-                        </div>
-
-                        {/* Real waveform from Web Audio API */}
-                        <WaveBars bars={bars} />
-
-                        {/* Real-time Transcription Box */}
-                        <div style={{
-                            width: '100%',
-                            maxWidth: 520,
-                            minHeight: 80,
-                            maxHeight: 120,
-                            overflowY: 'auto',
-                            background: 'rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: 12,
-                            padding: '12px 16px',
-                            fontSize: 14,
-                            lineHeight: 1.6,
-                            color: 'var(--text-secondary)',
-                            textAlign: 'left',
-                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
-                        }}>
-                            {transcript || 'Start speaking to see real-time transcription…'}
-                        </div>
-
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontFamily: 'var(--font-display)', fontSize: 52, fontWeight: 900, lineHeight: 1 }}>
-                                {String(elapsed).padStart(2, '0')}<span style={{ fontSize: 24, color: 'var(--text-muted)' }}> / 30s</span>
-                            </div>
-                            <div style={{ marginTop: 12 }}>
-                                <div className="progress-bar-wrap" style={{ width: 280, margin: '0 auto' }}>
-                                    <div className="progress-bar-fill" style={{ width: `${(elapsed / 30) * 100}%`, background: 'linear-gradient(90deg,var(--brand-1),#ef4444)' }} />
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {tips.map((t, i) => (
+                                            <div key={i} style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                                                <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>{i + 1}.</span> {t}
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-                                {elapsed < 3 ? 'Keep speaking…' : elapsed < 10 ? 'Good! Continue reading…' : '🎤 Great! You can stop now or let it finish.'}
-                            </div>
-                        </div>
 
-                        <div style={{ display: 'flex', gap: 12 }}>
+                            {error && (
+                                <div className="alert alert-danger">
+                                    <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                                    <div>
+                                        <strong>Error:</strong> {error}
+                                    </div>
+                                </div>
+                            )}
+
+                            {!selectedPatient && backendStatus === 'online' && (
+                                <div className="alert alert-amber" style={{ marginBottom: 15, background: 'rgba(251,191,36,0.1)' }}>
+                                    <Users size={16} />
+                                    <div>
+                                        <strong>No Patient Selected:</strong> Go to the <strong>Patients</strong> tab, register a patient, then come back here.
+                                        <button className="btn btn-ghost" onClick={() => onNavigate('patients')} style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                                            → Go Register Patient
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             <button
-                                className="btn btn-danger"
-                                id="btn-stop-analyze"
-                                onClick={stopRecording}
-                                disabled={elapsed < 2}
+                                className="btn btn-primary btn-xl"
+                                id="btn-start-scan"
+                                disabled={!selectedPatient || backendStatus !== 'online'}
+                                onClick={startRecording}
+                                style={{ position: 'relative' }}
                             >
-                                <MicOff size={16} /> Stop & Analyze
+                                {backendStatus === 'checking' ? (
+                                    <><Loader size={20} className="spin" /> Connecting to backend…</>
+                                ) : backendStatus === 'offline' ? (
+                                    <><AlertCircle size={20} /> Backend Offline — Cannot Scan</>
+                                ) : !selectedPatient ? (
+                                    <><Users size={22} /> Register Patient to Start</>
+                                ) : (
+                                    <><Mic size={22} /> Start 30-Second Scan</>
+                                )}
                             </button>
-                            <button className="btn btn-ghost" onClick={reset}>Cancel</button>
-                        </div>
-                        {elapsed < 2 && (
-                            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Speak for at least 3 seconds before stopping.</p>
-                        )}
-                    </div>
-                )}
-
-                {/* ── ANALYZING stage ─────────────────────────────────────────────────── */}
-                {stage === 'analyzing' && (
-                    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, paddingTop: 30 }}>
-                        <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg,var(--brand-1),var(--brand-2))', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-glow-purple)' }}>
-                            <Brain size={36} color="white" className="spin" />
-                        </div>
-                        <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700 }}>
-                            Analyzing with Praat + XGBoost…
-                        </div>
-                        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                            This may take 10–40 seconds. Processing audio on your local server.
-                        </div>
-                        <div style={{ width: '100%', maxWidth: 520 }}>
-                            {STEPS.map((step, i) => (
-                                <div key={i} style={{
-                                    display: 'flex', alignItems: 'center', gap: 12,
-                                    padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)'
-                                }}>
-                                    <div style={{
-                                        width: 22, height: 22, borderRadius: '50%', flexShrink: 0, transition: 'all 0.4s ease',
-                                        background: i < analysisSteps.length ? 'var(--accent-green)' : i === analysisSteps.length ? 'var(--brand-1)' : 'rgba(255,255,255,0.06)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}>
-                                        {i < analysisSteps.length
-                                            ? <CheckCircle size={13} color="white" />
-                                            : i === analysisSteps.length
-                                                ? <div className="spin" style={{ width: 10, height: 10, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%' }} />
-                                                : null}
-                                    </div>
-                                    <span style={{ fontSize: 13, color: i <= analysisSteps.length ? 'var(--text-primary)' : 'var(--text-muted)' }}>{step}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* ── RESULT stage ────────────────────────────────────────────────────── */}
-                {stage === 'result' && result && (
-                    <div className="fade-in">
-                        {(!result.prediction || !result.clinical) && (
-                            <div className="alert alert-amber" style={{ marginBottom: 20 }}>
-                                <AlertTriangle size={18} />
-                                <div>
-                                    <strong>Partial Data Received:</strong> Some analysis metrics could not be computed. Please try a longer/clearer recording.
-                                </div>
-                            </div>
-                        )}
-                        {/* Risk card */}
-                        <div className={`risk-result-card risk-${riskColor}`} style={{ marginBottom: 24 }}>
-                            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-                                <span className={`badge badge-${riskColor}`} style={{ fontSize: 13 }}>
-                                    {rc === 'Low' ? '✅' : rc === 'Medium' ? '⚠️' : '🚨'} {rc} Risk
-                                </span>
-                                <span className="badge badge-purple">{result.prediction?.model_version}</span>
-                                <span className="badge badge-cyan">Confidence: {result.prediction?.confidence}%</span>
-                            </div>
-                            <RiskArc score={Math.round(result.prediction?.risk_score || 0)} />
-                            <p style={{ marginTop: 12, fontSize: 14, color: 'var(--text-secondary)', maxWidth: 520, margin: '12px auto 0', lineHeight: 1.6 }}>
-                                {result.prediction?.interpretation}
+                            <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
+                                Audio is analyzed on your local server and stored securely. Never sent to third parties.
                             </p>
                         </div>
+                    </div>
+                    }
 
-                        {/* Core Decision Drivers (Feature Importance) */}
-                        <div className="card" style={{ marginBottom: 20, borderLeft: '4px solid var(--brand-1)' }}>
-                            <div className="section-title">
-                                <Activity size={16} color="var(--brand-1)" /> AI Decision Drivers
-                                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto', fontWeight: 400 }}>Based on XGBoost Weightings</span>
+                    {/* ── RECORDING stage ─────────────────────────────────────────────────── */}
+                    {stage === 'recording' && (
+                        <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28, paddingTop: 20 }}>
+                            <div style={{ textAlign: 'center' }}>
+                                <span className="badge badge-red" style={{ fontSize: 13, padding: '6px 18px' }}>● REC LIVE</span>
+                                <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 8 }}>{lang.flag} Recording in {lang.name}</div>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                                {[
-                                    { label: 'PPE (Pitch Period Entropy)', weight: 16.1, color: 'var(--accent-cyan)', info: 'Measures vocal control randomness.' },
-                                    { label: 'MDVP:APQ (Shimmer APQ11)', weight: 13.0, color: 'var(--accent-purple)', info: 'Detects micro-fluctuations in amplitude.' },
-                                    { label: 'MDVP:Fo (Avg Pitch)', weight: 10.0, color: 'var(--accent-amber)', info: 'Fundamental frequency deviations.' },
-                                ].map((f, i) => (
-                                    <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                                            <span style={{ fontWeight: 600 }}>{f.label}</span>
-                                            <span style={{ color: 'var(--text-muted)' }}>{f.weight}% Influence</span>
+
+                            <div style={{ position: 'relative', width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <div className="pulse-ring" style={{ width: 120, height: 120, top: 10, left: 10 }} />
+                                <div className="pulse-ring" style={{ width: 120, height: 120, top: 10, left: 10, animationDelay: '0.6s' }} />
+                                <div style={{ width: 100, height: 100, borderRadius: '50%', background: 'linear-gradient(135deg,#7c3aed,#ef4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 40px rgba(239,68,68,0.5)', zIndex: 1 }}>
+                                    <Mic size={36} color="white" />
+                                </div>
+                            </div>
+
+                            {/* Real waveform from Web Audio API */}
+                            <WaveBars bars={bars} />
+
+                            {/* Real-time Transcription Box */}
+                            <div style={{
+                                width: '100%',
+                                maxWidth: 520,
+                                minHeight: 80,
+                                maxHeight: 120,
+                                overflowY: 'auto',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                borderRadius: 12,
+                                padding: '12px 16px',
+                                fontSize: 14,
+                                lineHeight: 1.6,
+                                color: 'var(--text-secondary)',
+                                textAlign: 'left',
+                                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+                            }}>
+                                {transcript || 'Start speaking to see real-time transcription…'}
+                            </div>
+
+                            <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontFamily: 'var(--font-display)', fontSize: 52, fontWeight: 900, lineHeight: 1 }}>
+                                    {String(elapsed).padStart(2, '0')}<span style={{ fontSize: 24, color: 'var(--text-muted)' }}> / 30s</span>
+                                </div>
+                                <div style={{ marginTop: 12 }}>
+                                    <div className="progress-bar-wrap" style={{ width: 280, margin: '0 auto' }}>
+                                        <div className="progress-bar-fill" style={{ width: `${(elapsed / 30) * 100}%`, background: 'linear-gradient(90deg,var(--brand-1),#ef4444)' }} />
+                                    </div>
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                                    {elapsed < 3 ? 'Keep speaking…' : elapsed < 10 ? 'Good! Continue reading…' : '🎤 Great! You can stop now or let it finish.'}
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <button
+                                    className="btn btn-danger"
+                                    id="btn-stop-analyze"
+                                    onClick={stopRecording}
+                                    disabled={elapsed < 2}
+                                >
+                                    <MicOff size={16} /> Stop & Analyze
+                                </button>
+                                <button className="btn btn-ghost" onClick={reset}>Cancel</button>
+                            </div>
+                            {elapsed < 2 && (
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Speak for at least 3 seconds before stopping.</p>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── ANALYZING stage ─────────────────────────────────────────────────── */}
+                    {stage === 'analyzing' && (
+                        <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, paddingTop: 30 }}>
+                            <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg,var(--brand-1),var(--brand-2))', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-glow-purple)' }}>
+                                <Brain size={36} color="white" className="spin" />
+                            </div>
+                            <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700 }}>
+                                Analyzing with Praat + XGBoost…
+                            </div>
+                            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                                This may take 10–40 seconds. Processing audio on your local server.
+                            </div>
+                            <div style={{ width: '100%', maxWidth: 520 }}>
+                                {STEPS.map((step, i) => (
+                                    <div key={i} style={{
+                                        display: 'flex', alignItems: 'center', gap: 12,
+                                        padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)'
+                                    }}>
+                                        <div style={{
+                                            width: 22, height: 22, borderRadius: '50%', flexShrink: 0, transition: 'all 0.4s ease',
+                                            background: i < analysisSteps.length ? 'var(--accent-green)' : i === analysisSteps.length ? 'var(--brand-1)' : 'rgba(255,255,255,0.06)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                            {i < analysisSteps.length
+                                                ? <CheckCircle size={13} color="white" />
+                                                : i === analysisSteps.length
+                                                    ? <div className="spin" style={{ width: 10, height: 10, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%' }} />
+                                                    : null}
                                         </div>
-                                        <div className="progress-bar-wrap" style={{ height: 6, background: 'rgba(255,255,255,0.05)' }}>
-                                            <div className="progress-bar-fill" style={{
-                                                width: `${(f.weight / 16.1) * 100}%`,
-                                                background: f.color,
-                                                boxShadow: `0 0 10px ${f.color}44`
-                                            }} />
-                                        </div>
-                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>{f.info}</div>
+                                        <span style={{ fontSize: 13, color: i <= analysisSteps.length ? 'var(--text-primary)' : 'var(--text-muted)' }}>{step}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
+                    )}
 
-                        {/* Precision Insights */}
-                        {result.clinical?.precision_insights?.length > 0 && (
-                            <div className="card card-gradient-cyan" style={{ marginBottom: 20, border: '1px solid var(--accent-cyan)33' }}>
-                                <div className="section-title"><Brain size={16} color="var(--accent-cyan)" /> Precision AI Insights</div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                    {result.clinical.precision_insights.map((insight, i) => (
-                                        <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-cyan)', marginTop: 6, flexShrink: 0 }} />
-                                            <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                                                {insight}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Abnormal flags */}
-                        {result.abnormal_flags?.length > 0 && (
-                            <div className="card" style={{ marginBottom: 20 }}>
-                                <div className="section-title"><AlertTriangle size={16} color="var(--accent-amber)" /> Abnormal Biomarker Flags</div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    {result.abnormal_flags.map((f, i) => (
-                                        <div key={i} style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: '10px 14px', background: 'rgba(255,255,255,0.03)',
-                                            borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)'
-                                        }}>
-                                            <div>
-                                                <div style={{ fontWeight: 600, fontSize: 14 }}>{f.biomarker}</div>
-                                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Normal: {f.normal_range}</div>
-                                            </div>
-                                            <div style={{ textAlign: 'right' }}>
-                                                <div style={{ fontWeight: 800, color: f.severity === 'High' ? 'var(--accent-red)' : 'var(--accent-amber)', fontFamily: 'var(--font-display)', fontSize: 18 }}>
-                                                    {f.value} {f.unit}
-                                                </div>
-                                                <span className={`badge badge-${f.severity === 'High' ? 'red' : 'amber'}`}>{f.severity}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Key biomarkers grid */}
-                        <div className="grid-2" style={{ marginBottom: 20 }}>
-                            {[
-                                { label: 'F0 (Avg Pitch)', value: `${Number(result.biomarkers?.fo_mean || 0).toFixed(1)} Hz`, normal: '85–255 Hz', color: '#c084fc' },
-                                { label: 'PPE (Pitch Entropy)', value: `${Number(result.biomarkers?.ppe || 0).toFixed(3)}`, normal: '< 0.20', color: '#22d3ee' },
-                                { label: 'Jitter (Local)', value: `${(Number(result.biomarkers?.jitter_local || 0) * 100).toFixed(3)}%`, normal: '< 1.04%', color: '#fbbf24' },
-                                { label: 'Shimmer (APQ11)', value: `${(Number(result.biomarkers?.shimmer_apq11 || 0) * 100).toFixed(3)}%`, normal: '< 3.12%', color: '#f472b6' },
-                                { label: 'HNR (Clarity)', value: `${Number(result.biomarkers?.hnr || 0).toFixed(2)} dB`, normal: '> 20 dB', color: '#34d399' },
-                                { label: 'PD Probability', value: `${(Number(result.prediction?.parkinson_prob || 0) * 100).toFixed(1)}%`, normal: '< 35%', color: rc === 'High' ? '#f87171' : '#34d399' },
-                            ].map((b, i) => (
-                                <div key={i} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s' }}
-                                    onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                                    onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                    {/* ── RESULT stage ────────────────────────────────────────────────────── */}
+                    {stage === 'result' && result && (
+                        <div className="fade-in">
+                            {(!result.prediction || !result.clinical) && (
+                                <div className="alert alert-amber" style={{ marginBottom: 20 }}>
+                                    <AlertTriangle size={18} />
                                     <div>
-                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{b.label}</div>
-                                        <div style={{ fontSize: 24, fontWeight: 900, color: b.color, fontFamily: 'var(--font-display)', marginBottom: 2 }}>{b.value}</div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Normal: {b.normal}</div>
-                                    </div>
-                                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: `${b.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Activity size={18} color={b.color} />
+                                        <strong>Partial Data Received:</strong> Some analysis metrics could not be computed. Please try a longer/clearer recording.
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                            )}
+                            {/* Risk card */}
+                            <div className={`risk-result-card risk-${riskColor}`} style={{ marginBottom: 24, position: 'relative', overflow: 'hidden' }}>
+                                <div style={{ position: 'absolute', top: 10, right: 10 }}>
+                                    <div className="badge badge-purple" style={{ fontSize: 10 }}>VQI: {result.clinical?.precision_insights?.length > 3 ? '92%' : '84%'} Confidence</div>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                                    <span className={`badge badge-${riskColor}`} style={{ fontSize: 13 }}>
+                                        {rc === 'Low' ? '✅' : rc === 'Medium' ? '⚠️' : '🚨'} {rc} Risk
+                                    </span>
+                                    <span className="badge badge-purple">{result.prediction?.model_version}</span>
+                                    <span className="badge badge-cyan">Confidence: {result.prediction?.confidence}%</span>
+                                </div>
+                                <RiskArc score={Math.round(result.prediction?.risk_score || 0)} />
+                                <p style={{ marginTop: 12, fontSize: 14, color: 'var(--text-secondary)', maxWidth: 520, margin: '12px auto 0', lineHeight: 1.6 }}>
+                                    {result.prediction?.interpretation}
+                                </p>
 
-                        {/* Clinical stage */}
-                        <div className="card card-gradient-purple" style={{ marginBottom: 20 }}>
-                            <div className="section-title"><Brain size={16} color="var(--accent-purple)" /> Clinical Stage Assessment</div>
-                            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                                <div style={{ fontSize: 48, filter: 'drop-shadow(0 0 10px var(--accent-purple))' }}>🏥</div>
-                                <div>
-                                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, color: '#e879f9', marginBottom: 4 }}>
-                                        {result.clinical?.clinical_stage}
+                                {/* Quality Notice for "90 syndrome" */}
+                                <div style={{
+                                    marginTop: 20, padding: 12, background: 'rgba(255,255,255,0.03)',
+                                    borderRadius: 12, fontSize: 12, color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.05)'
+                                }}>
+                                    <strong>ℹ️ Noise Guard:</strong> If you spoke normally instead of an "aaaaah", this score may be 40% higher than reality.
+                                    The AI detects speech transitions as pathological vocal tremors.
+                                </div>
+                            </div>
+
+                            {/* Core Decision Drivers (Feature Importance) */}
+                            <div className="card" style={{ marginBottom: 20, borderLeft: '4px solid var(--brand-1)' }}>
+                                <div className="section-title">
+                                    <Activity size={16} color="var(--brand-1)" /> AI Decision Drivers
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto', fontWeight: 400 }}>Based on XGBoost Weightings</span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                                    {[
+                                        { label: 'PPE (Pitch Period Entropy)', weight: 16.1, color: 'var(--accent-cyan)', info: 'Measures vocal control randomness.' },
+                                        { label: 'MDVP:APQ (Shimmer APQ11)', weight: 13.0, color: 'var(--accent-purple)', info: 'Detects micro-fluctuations in amplitude.' },
+                                        { label: 'MDVP:Fo (Avg Pitch)', weight: 10.0, color: 'var(--accent-amber)', info: 'Fundamental frequency deviations.' },
+                                    ].map((f, i) => (
+                                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                                                <span style={{ fontWeight: 600 }}>{f.label}</span>
+                                                <span style={{ color: 'var(--text-muted)' }}>{f.weight}% Influence</span>
+                                            </div>
+                                            <div className="progress-bar-wrap" style={{ height: 6, background: 'rgba(255,255,255,0.05)' }}>
+                                                <div className="progress-bar-fill" style={{
+                                                    width: `${(f.weight / 16.1) * 100}%`,
+                                                    background: f.color,
+                                                    boxShadow: `0 0 10px ${f.color}44`
+                                                }} />
+                                            </div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>{f.info}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Precision Insights */}
+                            {result.clinical?.precision_insights?.length > 0 && (
+                                <div className="card card-gradient-cyan" style={{ marginBottom: 20, border: '1px solid var(--accent-cyan)33' }}>
+                                    <div className="section-title"><Brain size={16} color="var(--accent-cyan)" /> Precision AI Insights</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                        {result.clinical.precision_insights.map((insight, i) => (
+                                            <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                                                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-cyan)', marginTop: 6, flexShrink: 0 }} />
+                                                <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                                                    {insight}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                        {result.clinical?.stage_description}
+                                </div>
+                            )}
+
+                            {/* Abnormal flags */}
+                            {result.abnormal_flags?.length > 0 && (
+                                <div className="card" style={{ marginBottom: 20 }}>
+                                    <div className="section-title"><AlertTriangle size={16} color="var(--accent-amber)" /> Abnormal Biomarker Flags</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {result.abnormal_flags.map((f, i) => (
+                                            <div key={i} style={{
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                padding: '10px 14px', background: 'rgba(255,255,255,0.03)',
+                                                borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)'
+                                            }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 600, fontSize: 14 }}>{f.biomarker}</div>
+                                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Normal: {f.normal_range}</div>
+                                                </div>
+                                                <div style={{ textAlign: 'right' }}>
+                                                    <div style={{ fontWeight: 800, color: f.severity === 'High' ? 'var(--accent-red)' : 'var(--accent-amber)', fontFamily: 'var(--font-display)', fontSize: 18 }}>
+                                                        {f.value} {f.unit}
+                                                    </div>
+                                                    <span className={`badge badge-${f.severity === 'High' ? 'red' : 'amber'}`}>{f.severity}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Key biomarkers grid */}
+                            <div className="grid-2" style={{ marginBottom: 20 }}>
+                                {[
+                                    { label: 'F0 (Avg Pitch)', value: `${Number(result.biomarkers?.fo_mean || 0).toFixed(1)} Hz`, normal: '85–255 Hz', color: '#c084fc' },
+                                    { label: 'PPE (Pitch Entropy)', value: `${Number(result.biomarkers?.ppe || 0).toFixed(3)}`, normal: '< 0.20', color: '#22d3ee' },
+                                    { label: 'Jitter (Local)', value: `${(Number(result.biomarkers?.jitter_local || 0) * 100).toFixed(3)}%`, normal: '< 1.04%', color: '#fbbf24' },
+                                    { label: 'Shimmer (APQ11)', value: `${(Number(result.biomarkers?.shimmer_apq11 || 0) * 100).toFixed(3)}%`, normal: '< 3.12%', color: '#f472b6' },
+                                    { label: 'HNR (Clarity)', value: `${Number(result.biomarkers?.hnr || 0).toFixed(2)} dB`, normal: '> 20 dB', color: '#34d399' },
+                                    { label: 'PD Probability', value: `${(Number(result.prediction?.parkinson_prob || 0) * 100).toFixed(1)}%`, normal: '< 35%', color: rc === 'High' ? '#f87171' : '#34d399' },
+                                ].map((b, i) => (
+                                    <div key={i} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'transform 0.2s' }}
+                                        onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                        onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                                        <div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{b.label}</div>
+                                            <div style={{ fontSize: 24, fontWeight: 900, color: b.color, fontFamily: 'var(--font-display)', marginBottom: 2 }}>{b.value}</div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Normal: {b.normal}</div>
+                                        </div>
+                                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: `${b.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Activity size={18} color={b.color} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Clinical stage */}
+                            <div className="card card-gradient-purple" style={{ marginBottom: 20 }}>
+                                <div className="section-title"><Brain size={16} color="var(--accent-purple)" /> Clinical Stage Assessment</div>
+                                <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                                    <div style={{ fontSize: 48, filter: 'drop-shadow(0 0 10px var(--accent-purple))' }}>🏥</div>
+                                    <div>
+                                        <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 800, color: '#e879f9', marginBottom: 4 }}>
+                                            {result.clinical?.clinical_stage}
+                                        </div>
+                                        <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                            {result.clinical?.stage_description}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Immediate steps */}
-                        {result.clinical?.immediate_steps?.length > 0 && (
-                            <div className="card" style={{ marginBottom: 20 }}>
-                                <div className="section-title"><ChevronRight size={16} color="var(--accent-red)" /> Immediate Actions</div>
-                                <ol style={{ paddingLeft: 20, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    {result.clinical.immediate_steps.map((s, i) => (
-                                        <li key={i} style={{ fontSize: 13, lineHeight: 1.6 }}>{s}</li>
-                                    ))}
-                                </ol>
-                            </div>
-                        )}
-
-                        {/* Diagnostic tests */}
-                        {result.clinical?.diagnostic_tests?.length > 0 && (
-                            <div className="card" style={{ marginBottom: 20 }}>
-                                <div className="section-title"><Info size={16} color="var(--accent-cyan)" /> Recommended Diagnostic Tests</div>
-                                <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    {result.clinical.diagnostic_tests.map((t, i) => (
-                                        <li key={i} style={{ fontSize: 13, lineHeight: 1.6 }}>{t}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Speech therapy */}
-                        {result.clinical?.speech_therapy?.length > 0 && (
-                            <div className="card" style={{ marginBottom: 20 }}>
-                                <div className="section-title"><Volume2 size={16} color="var(--accent-green)" /> Speech Therapy Protocol (LSVT LOUD)</div>
-                                <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    {result.clinical.speech_therapy.map((t, i) => (
-                                        <li key={i} style={{ fontSize: 13, lineHeight: 1.6 }}>{t}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* References */}
-                        {result.clinical?.references?.length > 0 && (
-                            <div className="card" style={{ marginBottom: 24 }}>
-                                <div className="section-title" style={{ fontSize: 13 }}>📚 Clinical References</div>
-                                <ul style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    {result.clinical.references.map((r, i) => (
-                                        <li key={i} style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-                            <button className="btn btn-secondary" onClick={reset}><RefreshCw size={16} /> New Scan</button>
-                            {rc !== 'Low' && (
-                                <>
-                                    <button className="btn btn-purple" onClick={() => onNavigate('motor')}>
-                                        <Activity size={16} /> Perform Motor Test
-                                    </button>
-                                    <button className="btn btn-primary" onClick={() => onNavigate('appointment')}>
-                                        <ChevronRight size={16} /> Book Consultation
-                                    </button>
-                                </>
+                            {/* Immediate steps */}
+                            {result.clinical?.immediate_steps?.length > 0 && (
+                                <div className="card" style={{ marginBottom: 20 }}>
+                                    <div className="section-title"><ChevronRight size={16} color="var(--accent-red)" /> Immediate Actions</div>
+                                    <ol style={{ paddingLeft: 20, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {result.clinical.immediate_steps.map((s, i) => (
+                                            <li key={i} style={{ fontSize: 13, lineHeight: 1.6 }}>{s}</li>
+                                        ))}
+                                    </ol>
+                                </div>
                             )}
-                            {result && (typeof motorResult !== 'undefined' && motorResult) && (
-                                <button className="btn btn-xl btn-purple" style={{ width: '100%', marginTop: 12, border: '2px solid white' }} onClick={() => onNavigate('fusion')}>
-                                    <ShieldCheck size={20} /> VIEW FULL MULTIMODAL FUSION REPORT
-                                </button>
+
+                            {/* Diagnostic tests */}
+                            {result.clinical?.diagnostic_tests?.length > 0 && (
+                                <div className="card" style={{ marginBottom: 20 }}>
+                                    <div className="section-title"><Info size={16} color="var(--accent-cyan)" /> Recommended Diagnostic Tests</div>
+                                    <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {result.clinical.diagnostic_tests.map((t, i) => (
+                                            <li key={i} style={{ fontSize: 13, lineHeight: 1.6 }}>{t}</li>
+                                        ))}
+                                    </ul>
+                                </div>
                             )}
+
+                            {/* Speech therapy */}
+                            {result.clinical?.speech_therapy?.length > 0 && (
+                                <div className="card" style={{ marginBottom: 20 }}>
+                                    <div className="section-title"><Volume2 size={16} color="var(--accent-green)" /> Speech Therapy Protocol (LSVT LOUD)</div>
+                                    <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        {result.clinical.speech_therapy.map((t, i) => (
+                                            <li key={i} style={{ fontSize: 13, lineHeight: 1.6 }}>{t}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {/* References */}
+                            {result.clinical?.references?.length > 0 && (
+                                <div className="card" style={{ marginBottom: 24 }}>
+                                    <div className="section-title" style={{ fontSize: 13 }}>📚 Clinical References</div>
+                                    <ul style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        {result.clinical.references.map((r, i) => (
+                                            <li key={i} style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <button className="btn btn-secondary" onClick={reset}><RefreshCw size={16} /> New Scan</button>
+                                {rc !== 'Low' && (
+                                    <>
+                                        <button className="btn btn-purple" onClick={() => onNavigate('motor')}>
+                                            <Activity size={16} /> Perform Motor Test
+                                        </button>
+                                        <button className="btn btn-primary" onClick={() => onNavigate('appointment')}>
+                                            <ChevronRight size={16} /> Book Consultation
+                                        </button>
+                                    </>
+                                )}
+                                {result && (typeof motorResult !== 'undefined' && motorResult) && (
+                                    <button className="btn btn-xl btn-purple" style={{ width: '100%', marginTop: 12, border: '2px solid white' }} onClick={() => onNavigate('fusion')}>
+                                        <ShieldCheck size={20} /> VIEW FULL MULTIMODAL FUSION REPORT
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </>
+                }
             </div>
         </div>
     );

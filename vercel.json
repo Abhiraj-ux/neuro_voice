@@ -1,0 +1,25 @@
+{
+    "version": 2,
+    "rewrites": [
+        {
+            "source": "/api/(.*)",
+            "destination": "/api/index.py"
+        }
+    ],
+    "builds": [
+        {
+            "src": "package.json",
+            "use": "@vercel/static-build",
+            "config": {
+                "distDir": "dist"
+            }
+        },
+        {
+            "src": "api/index.py",
+            "use": "@vercel/python",
+            "config": {
+                "maxDuration": 60
+            }
+        }
+    ]
+}

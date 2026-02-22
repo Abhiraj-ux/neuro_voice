@@ -7,19 +7,27 @@ import { api, checkBackendHealth } from '../api/client';
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         return (
-            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>{label}</p>
-                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-cyan)' }}>Score: {payload[0].value}</p>
+            <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--brand-2)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6, fontWeight: 600 }}>{label}</p>
+                <p style={{ fontSize: 18, fontWeight: 900, color: 'var(--accent-cyan)', fontFamily: 'var(--font-display)' }}>Brain Score: {payload[0].value}</p>
             </div>
         );
     }
     return null;
 };
 
-export default function Dashboard({ onNavigate, activePatientId, activePage }) {
+export default function Dashboard({
+    onNavigate,
+    activePatientId,
+    activePage,
+    wearableConnected,
+    wearablePulse,
+    wearableDevice
+}) {
     const [animIn, setAnimIn] = useState(false);
     const [stats, setStats] = useState([]);
     const [history, setHistory] = useState([]);
+    const [motorHistory, setMotorHistory] = useState([]);
     const [patient, setPatient] = useState(null);
 
     useEffect(() => {
@@ -29,22 +37,26 @@ export default function Dashboard({ onNavigate, activePatientId, activePage }) {
     useEffect(() => {
         if (!activePatientId) return;
 
+        let isMounted = true;
         const fetchData = async () => {
             try {
-                // Fetch patient and session history from real implementation
                 const result = await api.getPatient(activePatientId);
-                if (!result) return;
+                if (!result || !isMounted) return;
 
-                const { patient: pData, sessions = [] } = result;
+                const { patient: pData, sessions = [], motor_sessions = [] } = result;
                 setPatient(pData);
+                setMotorHistory(motor_sessions.map(m => ({
+                    date: new Date(m.recorded_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }),
+                    speed: m.stability_idx,
+                    irregularity: (100 - m.accuracy_pct).toFixed(1),
+                    label: m.label
+                })).slice(0, 5));
 
                 if (sessions && sessions.length > 0) {
-                    // Format for chart - last 7 sessions
                     const chartData = [...sessions].reverse().slice(-7).map(s => ({
                         day: new Date(s.recorded_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }),
                         score: Math.round(s.risk_score || 0),
                         risk: s.risk_label || 'Unknown',
-                        // Detailed biomarkers for the table
                         fo: s.fo_mean?.toFixed(1) || '—',
                         jitter: s.jitter_local ? (s.jitter_local * 100).toFixed(2) + '%' : '—',
                         shimmer: s.shimmer_local ? (s.shimmer_local * 100).toFixed(2) + '%' : '—',
@@ -52,13 +64,14 @@ export default function Dashboard({ onNavigate, activePatientId, activePage }) {
                     }));
                     setHistory(chartData);
 
-                    // Update stats with the latest real session
                     const latest = sessions[0];
+                    const latestMotor = motor_sessions[0];
+
                     setStats([
                         { label: 'Risk Score', value: Math.round(latest.risk_score || 0), unit: '/100', change: 'Live from AI', trend: (latest.risk_score || 0) > 50 ? 'down' : 'up', icon: Brain, color: 'var(--accent-purple)', bg: 'rgba(168,85,247,0.12)' },
-                        { label: 'Total Scans', value: sessions.length, unit: '', change: 'All-time', trend: 'up', icon: Mic, color: 'var(--accent-cyan)', bg: 'rgba(34,211,238,0.10)' },
-                        { label: 'Status', value: latest.risk_label || 'N/A', unit: '', change: 'Clinical Index', trend: 'up', icon: Activity, color: latest.risk_label === 'Low' ? 'var(--accent-green)' : 'var(--accent-amber)', bg: 'rgba(52,211,153,0.10)' },
-                        { label: 'Vocal Stability', value: latest.jitter_local ? (100 - (latest.jitter_local * 1000)).toFixed(1) : '—', unit: '%', change: 'Stability', trend: 'up', icon: TrendingUp, color: 'var(--accent-green)', bg: 'rgba(52,211,153,0.10)' },
+                        { label: 'Vocal Health', value: latest.risk_label || 'N/A', unit: '', change: 'Clinical Index', trend: 'up', icon: Mic, color: latest.risk_label === 'Low' ? 'var(--accent-green)' : 'var(--accent-amber)', bg: 'rgba(34,211,238,0.10)' },
+                        { label: 'Motor Status', value: latestMotor ? latestMotor.label.split(' ')[0] : 'None', unit: '', change: latestMotor ? 'Latest Test' : 'No Test', trend: 'up', icon: Activity, color: (latestMotor && latestMotor.label.includes('Healthy')) ? 'var(--accent-green)' : 'var(--accent-amber)', bg: 'rgba(52,211,153,0.10)' },
+                        { label: 'Stability', value: latest.jitter_local ? (100 - (latest.jitter_local * 1000)).toFixed(1) : '—', unit: '%', change: 'Stability', trend: 'up', icon: TrendingUp, color: 'var(--accent-green)', bg: 'rgba(52,211,153,0.10)' },
                     ]);
                 } else {
                     setHistory([]);
@@ -75,6 +88,7 @@ export default function Dashboard({ onNavigate, activePatientId, activePage }) {
         };
 
         fetchData();
+        return () => { isMounted = false; };
     }, [activePatientId, activePage]);
 
     const quickActions = [
@@ -133,26 +147,43 @@ export default function Dashboard({ onNavigate, activePatientId, activePage }) {
                 <div className="grid-2" style={{ gap: 24, marginBottom: 24 }}>
                     {/* Chart */}
                     <div className="card">
-                        <div className="section-title">
-                            <TrendingUp size={18} color="var(--accent-cyan)" />
-                            Brain Health Score — Trend
+                        <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <TrendingUp size={18} color="var(--accent-cyan)" />
+                                <span className="accent">Brain Health Score — Trend</span>
+                            </div>
+                            <div className="badge badge-cyan">CLINICAL V2.0</div>
                         </div>
                         {history.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={220}>
-                                <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="var(--brand-2)" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="var(--brand-2)" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                    <XAxis dataKey="day" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                    <YAxis domain={[0, 100]} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Area type="monotone" dataKey="score" stroke="var(--brand-2)" strokeWidth={2.5} fill="url(#scoreGrad)" dot={{ fill: 'var(--brand-2)', r: 4 }} activeDot={{ r: 6, stroke: 'white', strokeWidth: 2 }} />
-                                </AreaChart>
-                            </ResponsiveContainer>
+                            <div style={{ position: 'relative' }}>
+                                <ResponsiveContainer width="100%" height={240}>
+                                    <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                        <defs>
+                                            <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="var(--accent-cyan)" stopOpacity={0.4} />
+                                                <stop offset="95%" stopColor="var(--accent-cyan)" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                                        <XAxis dataKey="day" tick={{ fill: 'var(--text-secondary)', fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                                        <YAxis domain={[0, 100]} tick={{ fill: 'var(--text-secondary)', fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Area
+                                            type="monotone"
+                                            dataKey="score"
+                                            stroke="var(--accent-cyan)"
+                                            strokeWidth={4}
+                                            fill="url(#scoreGrad)"
+                                            dot={{ fill: 'var(--accent-cyan)', r: 5, strokeWidth: 2, stroke: 'var(--bg-primary)' }}
+                                            activeDot={{ r: 8, stroke: 'white', strokeWidth: 3 }}
+                                            animationDuration={1500}
+                                        />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.03, pointerEvents: 'none' }}>
+                                    <Brain size={180} />
+                                </div>
+                            </div>
                         ) : (
                             <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', borderRadius: 12 }}>
                                 No scan history yet. Complete a scan to see trends.
@@ -161,47 +192,61 @@ export default function Dashboard({ onNavigate, activePatientId, activePage }) {
                     </div>
 
                     {/* Quick Actions */}
-                    {/* Mobile Access / Phone Sync Card */}
-                    <div className="card card-gradient-cyan" style={{ border: '1px solid var(--accent-cyan)44' }}>
-                        <div className="section-title">
-                            <Smartphone size={18} color="var(--accent-cyan)" />
-                            Phone Access
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                                Access your clinical dashboard and recording tools on the move:
-                            </p>
-                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>
-                                https://{window.location.hostname}:5174
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        {/* Wearable Hub Card */}
+                        <div className={`card ${wearableConnected ? 'card-gradient-cyan' : ''}`} style={{ padding: 20 }}>
+                            <div className="section-title" style={{ marginBottom: 12, fontSize: 16 }}>
+                                <Watch size={16} color="var(--accent-cyan)" />
+                                Clinical Wearable Sync
                             </div>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--text-muted)', background: 'rgba(251,191,36,0.08)', padding: '8px 12px', borderRadius: 6 }}>
-                                <AlertCircle size={14} color="var(--accent-amber)" />
-                                <span>Note: You must trust the self-signed SSL certificate in your mobile browser first.</span>
-                            </div>
-                            <button className="btn btn-ghost btn-sm" style={{ width: '100%' }} onClick={() => window.open(`https://${window.location.hostname}:8001/health`, '_blank')}>
-                                Trust Backend Certificate
-                            </button>
-                        </div>
-                    </div>
 
-                    <div className="card">
-                        <div className="section-title">
-                            <Zap size={18} color="var(--accent-amber)" />
-                            Quick Actions
+                            {wearableConnected ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                    <div style={{ position: 'relative' }}>
+                                        <Heart size={44} color="var(--accent-red)" className="pulse-slow" />
+                                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: 'white', marginTop: 2 }}>
+                                            {wearablePulse}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{wearableDevice}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <div className="pulse-dot" style={{ width: 6, height: 6 }} /> Live Vitals Streaming
+                                        </div>
+                                    </div>
+                                    <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }} onClick={() => onNavigate('wearable')}>
+                                        Details
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>No medical wearable linked.</p>
+                                    <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={() => onNavigate('wearable')}>
+                                        <Zap size={14} /> Link Smartwatch
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            {quickActions.map(a => (
-                                <button key={a.id} className="appointment-card" style={{ width: '100%', textAlign: 'left', background: 'none' }} onClick={() => onNavigate(a.id)}>
-                                    <div style={{ width: 40, height: 40, borderRadius: 10, background: `${a.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        <a.icon size={18} color={a.color} />
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 14 }}>{a.label}</div>
-                                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{a.desc}</div>
-                                    </div>
-                                    <ChevronRight size={16} color="var(--text-muted)" />
-                                </button>
-                            ))}
+
+                        <div className="card" style={{ flex: 1 }}>
+                            <div className="section-title">
+                                <Zap size={18} color="var(--accent-amber)" />
+                                Quick Actions
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                {quickActions.map(a => (
+                                    <button key={a.id} className="appointment-card" style={{ width: '100%', textAlign: 'left', background: 'none', padding: '12px 14px' }} onClick={() => onNavigate(a.id)}>
+                                        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${a.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                            <a.icon size={16} color={a.color} />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{a.label}</div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{a.desc}</div>
+                                        </div>
+                                        <ChevronRight size={14} color="var(--text-muted)" />
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -238,6 +283,43 @@ export default function Dashboard({ onNavigate, activePatientId, activePage }) {
                                 )) : (
                                     <tr>
                                         <td colSpan="6" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No biomarker data available yet.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Motor History Table */}
+                <div className="card">
+                    <div className="section-title">
+                        <Smartphone size={18} color="var(--accent-purple)" />
+                        Recent Motor Assessments
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                    {['Date', 'Tapping Speed', 'Irregularity', 'Clinical Guess'].map(h => (
+                                        <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {motorHistory.length > 0 ? motorHistory.map((r, i) => (
+                                    <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s' }}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                                        <td style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text-secondary)' }}>{r.date}</td>
+                                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 600, color: 'var(--accent-purple)' }}>{r.speed} taps/s</td>
+                                        <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 600, color: 'var(--accent-amber)' }}>{r.irregularity}%</td>
+                                        <td style={{ padding: '12px 14px' }}>
+                                            <span className="badge badge-cyan">{r.label}</span>
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan="4" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No motor assessments yet.</td>
                                     </tr>
                                 )}
                             </tbody>

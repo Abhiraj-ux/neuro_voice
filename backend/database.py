@@ -33,7 +33,15 @@ class Patient(Base):
     email       = Column(String(120))
     created_at  = Column(DateTime, default=datetime.utcnow)
 
-    sessions    = relationship("VoiceSession", back_populates="patient")
+    # ── Gamification ──────────────────────────
+    xp                  = Column(Integer, default=0)
+    streak_count        = Column(Integer, default=0)
+    last_activity_date  = Column(DateTime)
+    achievements_json   = Column(Text, default="[]")  # List of achievement IDs
+
+    sessions        = relationship("VoiceSession", back_populates="patient")
+    motor_sessions  = relationship("MotorSession", back_populates="patient")
+    imaging_sessions = relationship("ImagingSession", back_populates="patient")
 
 
 # ─────────────────────────────────────────────
@@ -96,6 +104,71 @@ class VoiceSession(Base):
     recommendations   = Column(Text)              # JSON string
 
     patient = relationship("Patient", back_populates="sessions")
+
+
+# ─────────────────────────────────────────────
+class MotorSession(Base):
+    __tablename__ = "motor_sessions"
+
+    id             = Column(Integer, primary_key=True, index=True)
+    patient_id     = Column(Integer, ForeignKey("patients.id"), nullable=False)
+    recorded_at    = Column(DateTime, default=datetime.utcnow)
+    
+    # Results
+    tremor_score   = Column(Float)    # 0-100
+    reaction_ms    = Column(Integer)
+    accuracy_pct   = Column(Float)
+    stability_idx  = Column(Float)
+    
+    label          = Column(String(30))  # "Normal" / "Mild Tremor" etc
+
+    patient = relationship("Patient", back_populates="motor_sessions")
+
+
+# ─────────────────────────────────────────────
+class ImagingSession(Base):
+    __tablename__ = "imaging_sessions"
+
+    id             = Column(Integer, primary_key=True, index=True)
+    patient_id     = Column(Integer, ForeignKey("patients.id"), nullable=False)
+    recorded_at    = Column(DateTime, default=datetime.utcnow)
+    
+    # Imaging Biomarkers
+    imaging_type   = Column(String(20))  # MRI / DaT Scan
+    sbr_ratio      = Column(Float)      # Striatal Binding Ratio (DaT Scan)
+    putamen_uptake = Column(Float)      # Putamen uptake (DaT Scan)
+    caudate_uptake = Column(Float)      # Caudate uptake (DaT Scan)
+    finding_summary = Column(Text)      # Clinical interpretation
+
+    patient = relationship("Patient", back_populates="imaging_sessions")
+
+
+# ─────────────────────────────────────────────
+class BlogPost(Base):
+    __tablename__ = "blog_posts"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    title       = Column(String(200), nullable=False)
+    description = Column(Text)
+    url         = Column(String(300))
+    thumbnail   = Column(String(300))
+    post_type   = Column(String(20), default="video")
+    likes       = Column(Integer, default=0)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+    comments    = relationship("BlogComment", back_populates="post", cascade="all, delete-orphan")
+
+
+class BlogComment(Base):
+    __tablename__ = "blog_comments"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    post_id     = Column(Integer, ForeignKey("blog_posts.id"), nullable=False)
+    author_name = Column(String(100))
+    content     = Column(Text, nullable=False)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+    post        = relationship("BlogPost", back_populates="comments")
 
 
 def init_db():

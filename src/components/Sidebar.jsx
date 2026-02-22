@@ -11,7 +11,9 @@ const NAV_ITEMS = [
     { id: 'scan', icon: Mic, label: 'Voice Scan', badge: 'LIVE' },
     { id: 'motor', icon: Activity, label: 'Motor Test', badge: 'NEW' },
     { id: 'appointment', icon: Calendar, label: 'Appointment Bot', badge: null },
+    { id: 'imaging', icon: Brain, label: 'Imaging AI Scan', badge: 'NEW' },
     { id: 'wearable', icon: Watch, label: 'Wearable Fusion', badge: null },
+    { id: 'community', icon: Users, label: 'Community Blog', badge: '5+' },
     { id: 'gamification', icon: Trophy, label: 'Daily Check-in', badge: null },
 ];
 

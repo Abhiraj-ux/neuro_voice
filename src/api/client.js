@@ -1,8 +1,7 @@
 // src/api/client.js
 // All API calls to the FastAPI backend
 
-const PROTO = window.location.protocol; // "http:" or "https:"
-const BASE = import.meta.env.VITE_API_URL || `${PROTO}//${window.location.hostname}:8001`;
+const BASE = import.meta.env.VITE_API_URL || `/api`;
 
 async function request(method, path, body, isForm = false, timeoutMs = 120000) {
     const controller = new AbortController();
@@ -44,7 +43,7 @@ async function request(method, path, body, isForm = false, timeoutMs = 120000) {
             throw new Error("Request timed out — backend may be overloaded. Please try again.");
         }
         if (err.message.includes("Failed to fetch") || err.message.includes("NetworkError") || err.message.includes("ERR_CONNECTION_REFUSED")) {
-            throw new Error(`Cannot connect to backend at ${BASE}. \n\nFIX: Open ${BASE}/health in a new tab, click "Advanced", and "Proceed" to trust the certificate, then return here and refresh.`);
+            throw new Error(`Cannot connect to the backend server. Please ensure the backend is running by executing 'start_backend.bat'.`);
         }
         throw err;
     }
@@ -70,6 +69,12 @@ export const api = {
 
     getPatient: (id) =>
         request("GET", `/patients/${id}`),
+
+    updatePatient: (id, data) =>
+        request("PATCH", `/patients/${id}`, data),
+
+    deleteAllPatients: () =>
+        request("DELETE", "/patients"),
 
     // ── Core analysis ──────────────────────────────────────────────────────────
     analyzeVoice: (patientId, audioBlob, language = "en") => {
@@ -104,6 +109,42 @@ export const api = {
 
     getOverview: () =>
         request("GET", "/overview"),
+
+    getLeaderboard: () =>
+        request("GET", "/leaderboard"),
+
+    saveMotorTest: (patientId, data) =>
+        request("POST", `/patients/${patientId}/motor`, data),
+
+    saveImaging: (patientId, data) =>
+        request("POST", `/patients/${patientId}/imaging`, data),
+
+    analyzeImaging: (patientId, imageFile) => {
+        const form = new FormData();
+        form.append("file", imageFile);
+        return request("POST", `/patients/${patientId}/imaging/analyze`, form, true, 60000);
+    },
+
+    searchDoctors: (location) =>
+        request("GET", `/doctors/search?location=${location}`),
+
+    // ── Appointments ─────────────────────────────────────────────────────────
+    bookAppointment: (data) =>
+        request("POST", "/appointments/book", data),
+
+    // ── Blog / Community ─────────────────────────────────────────────────────
+    getBlogPosts: () =>
+        request("GET", "/blog"),
+
+    likePost: (postId) =>
+        request("POST", `/blog/${postId}/like`),
+
+    addComment: (postId, authorName, content) =>
+        request("POST", `/blog/${postId}/comment`, { author_name: authorName, content }),
+
+    // ── Generic (for experimental features) ──────────────────────────────────
+    get: (path) => request("GET", path),
+    post: (path, data) => request("POST", path, data),
 };
 
 // ── WebSocket — live waveform amplitude ──────────────────────────────────────
