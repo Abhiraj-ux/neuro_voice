@@ -6,18 +6,23 @@ NeuroVoice AI is a cutting-edge multimodal diagnostic platform that fuses **Voca
 
 I have prepared this project for automated deployment so you no longer need to run the frontend and backend manually in the terminal.
 
-### **Option 1: Vercel (Fast & Free Frontend)**
-*Recommended for the user interface, but the AI backend may hit size limits (250MB).*
-1.  Push this code to a **GitHub Repository**.
-2.  Import the repository into [Vercel](https://vercel.com).
-3.  Vercel will detect the `vercel.json` and automatically build the React frontend and Python backend.
-4.  **Note**: Vercel uses ephemeral storage. Patient data saved to the local SQLite database will reset on redeployment.
+### **Option 1: Railway (🚀 RECOMMENDED)**
+*Best for AI projects with heavy libraries and persistent data.*
+1.  Login to [Railway.app](https://railway.app).
+2.  Click **"New Project"** > **"Deploy from GitHub"**.
+3.  Select your `neuro_voice` repo.
+4.  **Backend Setup**:
+    *   Railway will detect the `Procfile` and `requirements.txt`.
+    *   It will automatically install the 950MB scientific stack.
+    *   **Persistence**: Your `neuvoice.db` will be safe and won't reset on restarts.
+5.  **Frontend Setup**:
+    *   You can add a second service in the same project for the Frontend.
+    *   Root: `/`, Build: `npm run build`, Start: `npm run preview`.
 
-### **Option 2: Railway / Render (Recommended for Production)**
-*Recommended for persistent data (SQLite) and heavy AI models (Praat, XGBoost).*
-1.  Connect your GitHub repo to [Railway.app](https://railway.app).
-2.  It will detect the monorepo and deploy both the FastAPI server and Vite frontend.
-3.  **Persistence**: Your `neuvoice.db` will remain stable and your patient records will be preserved.
+### **Option 2: Vercel (Frontend Only)**
+*Good for the UI, but the AI backend is too large (950MB vs 500MB limit).*
+1.  Use Vercel only if you plan to host the backend elsewhere. 
+2.  If you try to deploy the full bridge, you will get a "Lambda Size Limit" error.
 
 ---
 
