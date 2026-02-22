@@ -6,18 +6,22 @@ NeuroVoice AI is a cutting-edge multimodal diagnostic platform that fuses **Voca
 
 I have prepared this project for automated deployment so you no longer need to run the frontend and backend manually in the terminal.
 
-### **Option 1: Railway (🚀 RECOMMENDED)**
-*Best for AI projects with heavy libraries and persistent data.*
-1.  Login to [Railway.app](https://railway.app).
-2.  Click **"New Project"** > **"Deploy from GitHub"**.
-3.  Select your `neuro_voice` repo.
-4.  **Backend Setup**:
-    *   Railway will detect the `Procfile` and `requirements.txt`.
-    *   It will automatically install the 950MB scientific stack.
-    *   **Persistence**: Your `neuvoice.db` will be safe and won't reset on restarts.
-5.  **Frontend Setup**:
-    *   You can add a second service in the same project for the Frontend.
-    *   Root: `/`, Build: `npm run build`, Start: `npm run preview`.
+### **Option 1: Render (🚀 RECOMMENDED)**
+*Excellent for monorepos, AI workloads, and free hosting.*
+
+#### **Part A: The Clinical Backend (FastAPI)**
+1.  Login to [Render.com](https://render.com).
+2.  Click **"New"** > **"Web Service"** and connect your GitHub repo.
+3.  **Environment**: `Python 3`
+4.  **Build Command**: `pip install -r requirements.txt`
+5.  **Start Command**: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+6.  **Persistence**: (Optional) Add a Disk for the SQLite database.
+
+#### **Part B: The Dashboard (React)**
+1.  Click **"New"** > **"Static Site"**.
+2.  **Build Command**: `npm install && npm run build`
+3.  **Publish Directory**: `dist`
+4.  **Headers**: Add a `_redirects` file or use a Rewrite rule for SPA routing.
 
 ### **Option 2: Vercel (Frontend Only)**
 *Good for the UI, but the AI backend is too large (950MB vs 500MB limit).*
