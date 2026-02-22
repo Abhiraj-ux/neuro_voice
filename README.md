@@ -6,16 +6,19 @@ NeuroVoice AI is a cutting-edge multimodal diagnostic platform that fuses **Voca
 
 I have prepared this project for automated deployment so you no longer need to run the frontend and backend manually in the terminal.
 
-### **Option 1: Hugging Face Spaces (🏆 BEST FOR 16GB RAM)**
-*Best for heavy AI models (XGBoost + Praat) that crash on 512MB RAM limits.*
-1.  Create a new **Space** on [Hugging Face](https://huggingface.co/spaces).
-2.  Select **Docker** as the SDK.
-3.  Hugging Face gives you **16GB of RAM** for free, which is 32x more than Render/Railway.
-4.  Upload this repository. The `Dockerfile` (or our monorepo setup) will build and run your clinical engine perfectly.
+### **Option 1: Hugging Face Spaces (🚀 ALL-IN-ONE / 16GB RAM)**
+*This is the clinical-grade method. It bundles the UI and AI into one single URL.*
 
-### **Option 2: Render / Railway (Standard)**
-*Note: Both have a 512MB RAM limit on free tiers. The AI may crash during heavy voice analysis.*
-1.  Follow the instructions below if you have a paid tier or tiny models.
+1.  Create a new **Space** on [Hugging Face](https://huggingface.co/spaces).
+2.  Choose **Docker** as the SDK (Blank template).
+3.  Hugging Face gives you **16GB of RAM** for free.
+4.  Push this repository to the Space.
+5.  **What happens**: The `Dockerfile` will build your React app and start your FastAPI server. Your dashboard will be available immediately at the Space URL.
+
+### **Option 2: Railway / Render (Dockerized)**
+*Note: Ensure you have at least 1GB RAM on your plan to avoid AI crashes during scans.*
+1.  Connect your repo and choose **Dockerfile** as the build method.
+2.  Railway will detect the `Dockerfile` in the root and deploy everything in one go.
 
 ### **Option 2: Vercel (Frontend Only)**
 *Good for the UI, but the AI backend is too large (950MB vs 500MB limit).*

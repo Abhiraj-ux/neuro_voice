@@ -28,7 +28,8 @@ from fastapi import (
     Depends, WebSocket, WebSocketDisconnect
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -91,6 +92,8 @@ def health_check():
         "model_ready": model_ready,
         "message": "NeuroVoice AI backend is running" if model_ready else "Backend running but model not trained yet",
     }
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1222,6 +1225,30 @@ def seed_blog(db: Session):
     db.commit()
     logger.info("✅ Blog seeded with premium educational videos")
 
+# ── Static Frontend Serving (For "Everything-in-One" Deployment) ────────────
+# We serve the React 'dist' folder from the root of the project
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dist")
+
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # API routes are handled above. If it's not an API route, serve the React app.
+        if full_path.startswith("api") or full_path.startswith("health"):
+            return None # FastAPI will fall through to the actual route
+        
+        # Check if file exists in dist
+        file_path = os.path.join(FRONTEND_DIR, full_path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        # Fallback to index.html for SPA routing
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+else:
+    @app.get("/")
+    def read_root():
+        return {"message": "NeuroVoice AI Backend is online. Frontend 'dist' not found for unified serving."}
 
 if __name__ == "__main__":
     import uvicorn
